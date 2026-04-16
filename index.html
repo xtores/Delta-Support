@@ -368,9 +368,45 @@ body.app-active{padding-bottom:var(--bnav);}
 .amc-prog-fill{height:100%;border-radius:3px;}
 .notif-banner{background:rgba(220,38,38,.08);border-bottom:1px solid rgba(220,38,38,.2);padding:10px 14px;display:flex;align-items:flex-start;gap:8px;font-size:13px;}
 
+/* ── CHECKLIST MODALS ── */
+.cl-upload-btn{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  border:2px dashed var(--bdr);border-radius:var(--r);padding:18px 10px;
+  cursor:pointer;transition:all .15s;background:var(--bg);text-align:center;
+}
+.cl-upload-btn:hover,.cl-upload-btn:active{border-color:var(--p);background:rgba(0,90,169,.04);}
+.photo-thumb{
+  position:relative;aspect-ratio:1;border-radius:var(--rs);overflow:hidden;
+  border:2px solid var(--bdr);cursor:pointer;background:var(--bg);
+}
+.photo-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.photo-thumb-del{
+  position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;
+  background:rgba(220,38,38,.85);color:#fff;border:none;cursor:pointer;
+  font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:700;
+}
+.photo-add-btn{
+  aspect-ratio:1;border:2px dashed var(--bdr);border-radius:var(--rs);
+  background:var(--bg);display:flex;flex-direction:column;align-items:center;
+  justify-content:center;cursor:pointer;font-size:1.4rem;gap:4px;
+  transition:all .15s;
+}
+.photo-add-btn:hover{border-color:var(--p);background:rgba(0,90,169,.04);}
+.photo-add-btn span{font-size:10px;color:var(--muted);}
+.part-item{
+  background:var(--sfc);border:1px solid var(--bdr);border-radius:var(--rs);
+  padding:12px 14px;display:flex;align-items:flex-start;gap:10px;
+}
+.part-item-info{flex:1;}
+.part-item-name{font-size:14px;font-weight:700;color:var(--txt);}
+.part-item-meta{font-size:12px;color:var(--muted);margin-top:2px;}
+.part-item-del{background:none;border:none;color:var(--err);cursor:pointer;font-size:1.1rem;padding:2px 4px;flex-shrink:0;}
+/* Signature canvas sizing */
+#sig-canvas{height:220px;}
+@media(min-width:768px){#sig-canvas{height:260px;}}
+
 /* DESKTOP OVERRIDES */
 @media(min-width:768px){
-  :root{--bnav:0px;}
   body.app-active{padding-bottom:0;overflow:hidden;height:100vh;}
   .bottom-nav{display:none;}
   .topbar{padding:0 20px;}
@@ -627,13 +663,43 @@ body.app-active{padding-bottom:var(--bnav);}
           <div style="font-size:12px;opacity:.8" id="av-loc">Tap a job card and tap Start Visit</div>
         </div>
         <div class="sec-label">Checklist</div>
-        <div class="action-row done" id="act-checkin" onclick="techAction('checkin')"><div class="action-icon" style="background:var(--ok-bg)">📍</div><div class="action-info"><div class="action-title" style="color:var(--ok)">GPS Check-In ✓</div><div class="action-sub" id="act-checkin-sub">Checked in 09:32 AM</div></div><span id="act-checkin-chev">✅</span></div>
-        <div class="action-row" id="act-before" onclick="techAction('before')"><div class="action-icon" style="background:#e0f2fe">📸</div><div class="action-info"><div class="action-title">Before Photos</div><div class="action-sub" id="act-before-sub">Tap to capture</div></div><span id="act-before-chev">›</span></div>
-        <div class="action-row" id="act-parts" onclick="techAction('parts')"><div class="action-icon" style="background:#fef3c7">🔩</div><div class="action-info"><div class="action-title">Spare Parts Used</div><div class="action-sub" id="act-parts-sub">Tap to log</div></div><span id="act-parts-chev">›</span></div>
-        <div class="action-row" id="act-notes" onclick="techAction('notes')"><div class="action-icon" style="background:#f3e8ff">📝</div><div class="action-info"><div class="action-title">Work Notes</div><div class="action-sub" id="act-notes-sub">Tap to add</div></div><span id="act-notes-chev">›</span></div>
-        <div class="action-row" id="act-after" onclick="techAction('after')"><div class="action-icon" style="background:#dcfce7">📷</div><div class="action-info"><div class="action-title">After Photos</div><div class="action-sub" id="act-after-sub">Tap to capture</div></div><span id="act-after-chev">›</span></div>
-        <div class="action-row" id="act-sig" onclick="techAction('sig')"><div class="action-icon" style="background:#fef3c7">✍️</div><div class="action-info"><div class="action-title">Customer Signature</div><div class="action-sub" id="act-sig-sub">Tap to collect</div></div><span id="act-sig-chev">›</span></div>
-        <div style="height:80px;"></div>
+        <!-- GPS Check-In (auto-done) -->
+        <div class="action-row done" id="act-checkin">
+          <div class="action-icon" style="background:var(--ok-bg)">📍</div>
+          <div class="action-info"><div class="action-title" style="color:var(--ok)">GPS Check-In ✓</div><div class="action-sub" id="act-checkin-sub">Checked in 09:32 AM · 0.2km from site</div></div>
+          <span>✅</span>
+        </div>
+        <!-- Before Photos -->
+        <div class="action-row" id="act-before" onclick="openChecklistModal('before')">
+          <div class="action-icon" style="background:#e0f2fe">📸</div>
+          <div class="action-info"><div class="action-title">Before Photos</div><div class="action-sub" id="act-before-sub">Tap to capture</div></div>
+          <span id="act-before-chev" style="color:var(--muted);font-size:18px">›</span>
+        </div>
+        <!-- Spare Parts -->
+        <div class="action-row" id="act-parts" onclick="openChecklistModal('parts')">
+          <div class="action-icon" style="background:#fef3c7">🔩</div>
+          <div class="action-info"><div class="action-title">Spare Parts Used</div><div class="action-sub" id="act-parts-sub">Tap to log</div></div>
+          <span id="act-parts-chev" style="color:var(--muted);font-size:18px">›</span>
+        </div>
+        <!-- Work Notes -->
+        <div class="action-row" id="act-notes" onclick="openChecklistModal('notes')">
+          <div class="action-icon" style="background:#f3e8ff">📝</div>
+          <div class="action-info"><div class="action-title">Work Notes</div><div class="action-sub" id="act-notes-sub">Tap to add</div></div>
+          <span id="act-notes-chev" style="color:var(--muted);font-size:18px">›</span>
+        </div>
+        <!-- After Photos -->
+        <div class="action-row" id="act-after" onclick="openChecklistModal('after')">
+          <div class="action-icon" style="background:#dcfce7">📷</div>
+          <div class="action-info"><div class="action-title">After Photos</div><div class="action-sub" id="act-after-sub">Tap to capture</div></div>
+          <span id="act-after-chev" style="color:var(--muted);font-size:18px">›</span>
+        </div>
+        <!-- Signature -->
+        <div class="action-row" id="act-sig" onclick="openChecklistModal('sig')">
+          <div class="action-icon" style="background:#fef9c3">✍️</div>
+          <div class="action-info"><div class="action-title">Customer Signature</div><div class="action-sub" id="act-sig-sub">Tap to collect</div></div>
+          <span id="act-sig-chev" style="color:var(--muted);font-size:18px">›</span>
+        </div>
+        <div style="height:90px;"></div>
         <div class="sticky-actions">
           <button class="btn btn-outline" style="min-height:52px;flex:1;border-radius:var(--r);" onclick="showToast('Opening WhatsApp...')">💬 WhatsApp</button>
           <button class="btn btn-p" style="min-height:52px;flex:2;border-radius:var(--r);" onclick="closeTechVisit()">✅ Close Visit</button>
@@ -748,6 +814,165 @@ body.app-active{padding-bottom:var(--bnav);}
       <button class="modal-close" onclick="closeModal('detail-modal')">✕</button>
     </div>
     <div class="modal-body" id="detail-body"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     CHECKLIST MODALS
+═══════════════════════════════════════ -->
+
+<!-- PHOTOS MODAL (shared for before/after) -->
+<div class="modal-overlay" id="photos-modal" onclick="handleModalBg(event,'photos-modal')">
+  <div class="modal-sheet">
+    <div class="modal-drag"></div>
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title" id="photos-modal-title">Before Photos</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px" id="photos-modal-count">0 photos added</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('photos-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Upload buttons -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        <label class="cl-upload-btn" for="photo-file-input">
+          <span style="font-size:1.6rem">🖼️</span>
+          <span style="font-size:13px;font-weight:700">Upload from Gallery</span>
+          <span style="font-size:11px;color:var(--muted)">JPG, PNG, HEIC</span>
+        </label>
+        <label class="cl-upload-btn" for="photo-camera-input">
+          <span style="font-size:1.6rem">📷</span>
+          <span style="font-size:13px;font-weight:700">Take Photo</span>
+          <span style="font-size:11px;color:var(--muted)">Use camera</span>
+        </label>
+      </div>
+      <!-- Hidden file inputs -->
+      <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(event)"/>
+      <input type="file" id="photo-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoUpload(event)"/>
+      <input type="file" id="photo-file-input2" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(event)"/>
+      <!-- Preview grid -->
+      <div id="photo-preview-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;min-height:60px;"></div>
+      <div id="photo-empty-hint" style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">
+        No photos yet — tap Upload or Take Photo above.
+      </div>
+      <div style="margin-top:16px;">
+        <button class="btn btn-p btn-lg" onclick="savePhotos()">Save Photos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SPARE PARTS MODAL -->
+<div class="modal-overlay" id="parts-modal" onclick="handleModalBg(event,'parts-modal')">
+  <div class="modal-sheet">
+    <div class="modal-drag"></div>
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">Spare Parts Used</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px" id="parts-count-label">0 items logged</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('parts-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Add part form -->
+      <div style="background:var(--bg);border-radius:var(--r);padding:14px;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--p);margin-bottom:10px;">Add Part</div>
+        <div class="form-group">
+          <label class="form-label">Part Name / Code <span class="req">*</span></label>
+          <input class="form-input" id="part-name" placeholder="e.g. Treadmill Belt LFT5 / SPC-0041"/>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Quantity <span class="req">*</span></label>
+            <input class="form-input" id="part-qty" type="number" min="1" value="1" placeholder="1"/>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Unit</label>
+            <select class="form-select" id="part-unit">
+              <option>pcs</option><option>set</option><option>m</option><option>kg</option><option>L</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Remarks (optional)</label>
+          <input class="form-input" id="part-remarks" placeholder="e.g. Replaced worn belt on unit #3"/>
+        </div>
+        <button class="btn btn-p" style="width:100%;min-height:48px;" onclick="addPartItem()">+ Add to List</button>
+      </div>
+      <!-- Parts list -->
+      <div id="parts-list-container" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+      <div id="parts-empty" style="text-align:center;padding:16px;color:var(--muted);font-size:13px;">No parts logged yet.</div>
+      <button class="btn btn-p btn-lg" onclick="saveParts()">Save Parts Log</button>
+    </div>
+  </div>
+</div>
+
+<!-- WORK NOTES MODAL -->
+<div class="modal-overlay" id="notes-modal" onclick="handleModalBg(event,'notes-modal')">
+  <div class="modal-sheet">
+    <div class="modal-drag"></div>
+    <div class="modal-hdr">
+      <div class="modal-title">Work Notes</div>
+      <button class="modal-close" onclick="closeModal('notes-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Issue Found</label>
+        <textarea class="form-textarea" id="note-issue" style="min-height:80px" placeholder="Describe the fault or problem found on site..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Action Taken</label>
+        <textarea class="form-textarea" id="note-action" style="min-height:80px" placeholder="What was done to fix / service the equipment..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Recommendation</label>
+        <textarea class="form-textarea" id="note-rec" style="min-height:60px" placeholder="e.g. Re-check in 3 months, replace part X next visit..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Completion Notes</label>
+        <textarea class="form-textarea" id="note-completion" style="min-height:60px" placeholder="e.g. Equipment tested and confirmed running normally..."></textarea>
+      </div>
+      <button class="btn btn-p btn-lg" onclick="saveNotes()">Save Notes</button>
+    </div>
+  </div>
+</div>
+
+<!-- SIGNATURE MODAL -->
+<div class="modal-overlay" id="sig-modal" onclick="handleModalBg(event,'sig-modal')">
+  <div class="modal-sheet">
+    <div class="modal-drag"></div>
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">Customer Signature</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Sign with finger or stylus</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('sig-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Customer name -->
+      <div class="form-group">
+        <label class="form-label">Customer Name</label>
+        <input class="form-input" id="sig-customer-name" placeholder="Customer full name"/>
+      </div>
+      <!-- Signature canvas -->
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--p);margin-bottom:8px;">Signature</div>
+      <div style="border:2px solid var(--bdr);border-radius:var(--r);overflow:hidden;background:#fff;position:relative;">
+        <canvas id="sig-canvas" style="display:block;width:100%;touch-action:none;cursor:crosshair;"></canvas>
+        <div id="sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:var(--light);font-size:13px;">
+          ✍️ &nbsp; Sign here with finger or stylus
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;margin-bottom:16px;">
+        <button class="btn btn-outline" style="flex:1;min-height:44px;" onclick="clearSignature()">🗑 Clear</button>
+        <div style="font-size:12px;color:var(--muted);display:flex;align-items:center;padding:0 8px;" id="sig-status">Not signed</div>
+      </div>
+      <!-- Preview saved sig -->
+      <div id="sig-saved-preview" style="display:none;margin-bottom:14px;">
+        <div style="font-size:12px;color:var(--ok);font-weight:700;margin-bottom:6px;">✅ Previous signature saved:</div>
+        <img id="sig-preview-img" style="border:1px solid var(--bdr);border-radius:var(--rx);max-width:100%;height:80px;object-fit:contain;background:#fff;"/>
+      </div>
+      <button class="btn btn-p btn-lg" onclick="saveSignature()">Save Signature</button>
+    </div>
   </div>
 </div>
 
@@ -1419,52 +1644,346 @@ function startTechVisit(id) {
   const t = tickets.find(x=>x.id===id);
   if (!t) return;
   t.status = 'in-progress';
+  resetVisitData();
   document.getElementById('av-id').textContent = `${t.id} · ACTIVE VISIT`;
   document.getElementById('av-title').textContent = t.equipment || 'Visit';
   document.getElementById('av-loc').textContent = `📍 ${t.branch} · ${t.customer}`;
-  // Reset checklist
+  // Reset checklist UI
   techCheckState = {checkin:true,before:false,parts:false,notes:false,after:false,sig:false};
-  ['before','parts','notes','after','sig'].forEach(k=>{
-    const row=document.getElementById('act-'+k);const chev=document.getElementById('act-'+k+'-chev');
-    if(row){row.classList.remove('done');}if(chev)chev.textContent='›';
-  });
+  ['before','parts','notes','after','sig'].forEach(k => markChecklistPending(k, {before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'}[k]));
   renderAll();
   goPage('active-visit');
   showToast(`Visit started for ${t.id}`);
 }
 
-function techAction(key) {
-  techCheckState[key] = !techCheckState[key];
-  const row=document.getElementById('act-'+key);
-  const chev=document.getElementById('act-'+key+'-chev');
-  const sub=document.getElementById('act-'+key+'-sub');
-  if (!row) return;
-  if (techCheckState[key]) {
-    row.classList.add('done'); if(chev)chev.textContent='✅';
-    const msgs={before:'2 photos ✓',parts:'2 parts logged ✓',notes:'Notes saved ✓',after:'After photos ✓',sig:'Signature captured ✓'};
-    if(sub&&msgs[key]) sub.textContent=msgs[key];
-    showToast(key.charAt(0).toUpperCase()+key.slice(1)+' ✅');
-  } else {
-    row.classList.remove('done'); if(chev)chev.textContent='›';
-    const def={before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'};
-    if(sub&&def[key]) sub.textContent=def[key];
+// ══════════════════════════════════════════════════════
+//   CHECKLIST MODAL ENGINE
+// ══════════════════════════════════════════════════════
+
+// Checklist data store (per visit)
+let visitData = {
+  beforePhotos: [],   // array of {dataUrl, name}
+  afterPhotos:  [],
+  parts:        [],   // array of {name, qty, unit, remarks}
+  notes:        {issue:'', action:'', rec:'', completion:''},
+  signature:    null, // dataURL
+  sigName:      '',
+};
+let currentPhotoType = 'before'; // 'before' or 'after'
+let sigCanvas = null, sigCtx = null, sigDrawing = false, sigHasData = false;
+
+// ── MARK CHECKLIST ITEM DONE ──
+function markChecklistDone(key, subtitle) {
+  const row = document.getElementById('act-'+key);
+  const chev = document.getElementById('act-'+key+'-chev');
+  const sub = document.getElementById('act-'+key+'-sub');
+  if (row) row.classList.add('done');
+  if (chev) { chev.textContent='✅'; chev.style.fontSize='20px'; }
+  if (sub && subtitle) sub.textContent = subtitle;
+  techCheckState[key] = true;
+}
+function markChecklistPending(key, subtitle) {
+  const row = document.getElementById('act-'+key);
+  const chev = document.getElementById('act-'+key+'-chev');
+  const sub = document.getElementById('act-'+key+'-sub');
+  if (row) row.classList.remove('done');
+  if (chev) { chev.textContent='›'; chev.style.fontSize='18px'; chev.style.color='var(--muted)'; }
+  if (sub && subtitle) sub.textContent = subtitle;
+  techCheckState[key] = false;
+}
+
+// ── OPEN CORRECT MODAL ──
+function openChecklistModal(key) {
+  if (key === 'before' || key === 'after') {
+    currentPhotoType = key;
+    document.getElementById('photos-modal-title').textContent = key === 'before' ? 'Before Photos' : 'After Photos';
+    renderPhotoGrid();
+    openModal('photos-modal');
+  } else if (key === 'parts') {
+    renderPartsList();
+    document.getElementById('part-name').value = '';
+    document.getElementById('part-qty').value = '1';
+    document.getElementById('part-remarks').value = '';
+    openModal('parts-modal');
+  } else if (key === 'notes') {
+    const n = visitData.notes;
+    document.getElementById('note-issue').value = n.issue || '';
+    document.getElementById('note-action').value = n.action || '';
+    document.getElementById('note-rec').value = n.rec || '';
+    document.getElementById('note-completion').value = n.completion || '';
+    openModal('notes-modal');
+  } else if (key === 'sig') {
+    openModal('sig-modal');
+    setTimeout(initSignatureCanvas, 100);
+    // Restore saved sig if exists
+    if (visitData.signature) {
+      const preview = document.getElementById('sig-saved-preview');
+      const img = document.getElementById('sig-preview-img');
+      if (preview) preview.style.display = 'block';
+      if (img) img.src = visitData.signature;
+      document.getElementById('sig-customer-name').value = visitData.sigName || '';
+    }
   }
 }
 
+// ══════════════════════════════════════════════════
+//   PHOTO UPLOAD
+// ══════════════════════════════════════════════════
+
+function handlePhotoUpload(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+  const arr = currentPhotoType === 'before' ? visitData.beforePhotos : visitData.afterPhotos;
+  let loaded = 0;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      arr.push({ dataUrl: e.target.result, name: file.name });
+      loaded++;
+      if (loaded === files.length) renderPhotoGrid();
+    };
+    reader.readAsDataURL(file);
+  });
+  event.target.value = ''; // reset input so same file can be re-selected
+}
+
+function renderPhotoGrid() {
+  const arr = currentPhotoType === 'before' ? visitData.beforePhotos : visitData.afterPhotos;
+  const grid = document.getElementById('photo-preview-grid');
+  const empty = document.getElementById('photo-empty-hint');
+  const countEl = document.getElementById('photos-modal-count');
+  if (countEl) countEl.textContent = `${arr.length} photo${arr.length!==1?'s':''} added`;
+  if (!arr.length) {
+    grid.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  grid.innerHTML = arr.map((p, i) => `
+    <div class="photo-thumb">
+      <img src="${p.dataUrl}" alt="Photo ${i+1}"/>
+      <button class="photo-thumb-del" onclick="deletePhoto(${i})" title="Remove">✕</button>
+    </div>`).join('') +
+    // Add more button
+    `<label class="photo-add-btn" for="${currentPhotoType==='before'?'photo-file-input':'photo-file-input2'}">
+      <span>➕</span><span>Add more</span>
+    </label>`;
+}
+
+// Second hidden input for "add more" within the preview grid
+function deletePhoto(idx) {
+  const arr = currentPhotoType === 'before' ? visitData.beforePhotos : visitData.afterPhotos;
+  arr.splice(idx, 1);
+  renderPhotoGrid();
+}
+
+function savePhotos() {
+  const arr = currentPhotoType === 'before' ? visitData.beforePhotos : visitData.afterPhotos;
+  const count = arr.length;
+  const label = currentPhotoType === 'before' ? 'before' : 'after';
+  if (!count) { showToast('Please add at least one photo'); return; }
+  closeModal('photos-modal');
+  markChecklistDone(currentPhotoType, `${count} photo${count!==1?'s':''} uploaded`);
+  showToast(`✅ ${count} ${label} photo${count!==1?'s':''} saved`);
+}
+
+// ══════════════════════════════════════════════════
+//   SPARE PARTS
+// ══════════════════════════════════════════════════
+
+function addPartItem() {
+  const name = document.getElementById('part-name').value.trim();
+  const qty = parseInt(document.getElementById('part-qty').value) || 1;
+  const unit = document.getElementById('part-unit').value;
+  const remarks = document.getElementById('part-remarks').value.trim();
+  if (!name) {
+    document.getElementById('part-name').style.borderColor = 'var(--err)';
+    document.getElementById('part-name').focus();
+    return;
+  }
+  document.getElementById('part-name').style.borderColor = '';
+  visitData.parts.push({ name, qty, unit, remarks });
+  document.getElementById('part-name').value = '';
+  document.getElementById('part-qty').value = '1';
+  document.getElementById('part-remarks').value = '';
+  renderPartsList();
+  document.getElementById('part-name').focus();
+  showToast(`Added: ${name}`);
+}
+
+function deletePart(idx) {
+  visitData.parts.splice(idx, 1);
+  renderPartsList();
+}
+
+function renderPartsList() {
+  const container = document.getElementById('parts-list-container');
+  const empty = document.getElementById('parts-empty');
+  const countEl = document.getElementById('parts-count-label');
+  if (countEl) countEl.textContent = `${visitData.parts.length} item${visitData.parts.length!==1?'s':''} logged`;
+  if (!visitData.parts.length) {
+    container.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  container.innerHTML = visitData.parts.map((p, i) => `
+    <div class="part-item">
+      <div class="part-item-info">
+        <div class="part-item-name">${p.name}</div>
+        <div class="part-item-meta">Qty: ${p.qty} ${p.unit}${p.remarks ? ' · ' + p.remarks : ''}</div>
+      </div>
+      <button class="part-item-del" onclick="deletePart(${i})" title="Remove">🗑</button>
+    </div>`).join('');
+}
+
+function saveParts() {
+  const count = visitData.parts.length;
+  if (!count) { showToast('Please add at least one part'); return; }
+  closeModal('parts-modal');
+  markChecklistDone('parts', `${count} item${count!==1?'s':''} logged`);
+  showToast(`✅ ${count} part${count!==1?'s':''} saved`);
+}
+
+// ══════════════════════════════════════════════════
+//   WORK NOTES
+// ══════════════════════════════════════════════════
+
+function saveNotes() {
+  const issue = document.getElementById('note-issue').value.trim();
+  const action = document.getElementById('note-action').value.trim();
+  const rec = document.getElementById('note-rec').value.trim();
+  const completion = document.getElementById('note-completion').value.trim();
+  if (!issue && !action) { showToast('Please fill in at least Issue Found or Action Taken'); return; }
+  visitData.notes = { issue, action, rec, completion };
+  const filled = [issue, action, rec, completion].filter(Boolean).length;
+  closeModal('notes-modal');
+  markChecklistDone('notes', `${filled} field${filled!==1?'s':''} saved`);
+  showToast('✅ Work notes saved');
+}
+
+// ══════════════════════════════════════════════════
+//   ELECTRONIC SIGNATURE PAD
+// ══════════════════════════════════════════════════
+
+function initSignatureCanvas() {
+  sigCanvas = document.getElementById('sig-canvas');
+  if (!sigCanvas) return;
+  // Set canvas resolution to match display size
+  const rect = sigCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  sigCanvas.width = rect.width * dpr;
+  sigCanvas.height = sigCanvas.offsetHeight * dpr;
+  sigCtx = sigCanvas.getContext('2d');
+  sigCtx.scale(dpr, dpr);
+  sigCtx.strokeStyle = '#1a2332';
+  sigCtx.lineWidth = 2.5;
+  sigCtx.lineCap = 'round';
+  sigCtx.lineJoin = 'round';
+  sigHasData = false;
+  document.getElementById('sig-status').textContent = 'Not signed';
+  document.getElementById('sig-status').style.color = 'var(--muted)';
+
+  // Touch events
+  sigCanvas.addEventListener('touchstart', sigTouchStart, { passive: false });
+  sigCanvas.addEventListener('touchmove', sigTouchMove, { passive: false });
+  sigCanvas.addEventListener('touchend', sigTouchEnd, { passive: false });
+  // Mouse events (desktop)
+  sigCanvas.addEventListener('mousedown', sigMouseDown);
+  sigCanvas.addEventListener('mousemove', sigMouseMove);
+  sigCanvas.addEventListener('mouseup', sigMouseUp);
+  sigCanvas.addEventListener('mouseleave', sigMouseUp);
+
+  // If there's a saved sig, render it
+  if (visitData.signature) {
+    const img = new Image();
+    img.onload = () => sigCtx.drawImage(img, 0, 0, rect.width, sigCanvas.offsetHeight);
+    img.src = visitData.signature;
+    sigHasData = true;
+    updateSigStatus();
+  }
+}
+
+function getSigPos(e) {
+  const rect = sigCanvas.getBoundingClientRect();
+  const touch = e.touches ? e.touches[0] : e;
+  return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+}
+
+function sigTouchStart(e) { e.preventDefault(); sigDrawing=true; const p=getSigPos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); hideSigPlaceholder(); }
+function sigTouchMove(e)  { e.preventDefault(); if(!sigDrawing)return; const p=getSigPos(e); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); sigHasData=true; updateSigStatus(); }
+function sigTouchEnd(e)   { e.preventDefault(); sigDrawing=false; }
+function sigMouseDown(e)  { sigDrawing=true; const p=getSigPos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); hideSigPlaceholder(); }
+function sigMouseMove(e)  { if(!sigDrawing)return; const p=getSigPos(e); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); sigHasData=true; updateSigStatus(); }
+function sigMouseUp()     { sigDrawing=false; }
+
+function hideSigPlaceholder() {
+  const ph = document.getElementById('sig-placeholder');
+  if (ph) ph.style.display = 'none';
+}
+function updateSigStatus() {
+  const el = document.getElementById('sig-status');
+  if (el && sigHasData) { el.textContent = '✅ Signed'; el.style.color = 'var(--ok)'; }
+}
+
+function clearSignature() {
+  if (!sigCtx || !sigCanvas) return;
+  const rect = sigCanvas.getBoundingClientRect();
+  sigCtx.clearRect(0, 0, rect.width, sigCanvas.offsetHeight);
+  sigHasData = false;
+  const ph = document.getElementById('sig-placeholder');
+  if (ph) ph.style.display = 'flex';
+  const el = document.getElementById('sig-status');
+  if (el) { el.textContent = 'Not signed'; el.style.color = 'var(--muted)'; }
+  // Clear saved preview
+  const preview = document.getElementById('sig-saved-preview');
+  if (preview) preview.style.display = 'none';
+}
+
+function saveSignature() {
+  if (!sigHasData) { showToast('Please ask customer to sign first'); return; }
+  const name = document.getElementById('sig-customer-name').value.trim();
+  visitData.signature = sigCanvas.toDataURL('image/png');
+  visitData.sigName = name;
+  // Show saved preview in modal
+  const preview = document.getElementById('sig-saved-preview');
+  const img = document.getElementById('sig-preview-img');
+  if (preview) preview.style.display = 'block';
+  if (img) img.src = visitData.signature;
+  closeModal('sig-modal');
+  markChecklistDone('sig', name ? `Signed by ${name}` : 'Signature captured');
+  showToast('✅ Signature saved');
+}
+
+// ── RESET VISIT DATA ──
+function resetVisitData() {
+  visitData = { beforePhotos:[], afterPhotos:[], parts:[], notes:{issue:'',action:'',rec:'',completion:''}, signature:null, sigName:'' };
+  // Remove event listeners from canvas
+  if (sigCanvas) {
+    sigCanvas.replaceWith(sigCanvas.cloneNode(false));
+    sigCanvas = null; sigCtx = null;
+  }
+}
+
+function techAction(key) { /* legacy stub - now handled by openChecklistModal */ }
+
 function closeTechVisit() {
   if (!activeTechJobId) { showToast('No active visit'); return; }
-  if (!confirm(`Close visit for ${activeTechJobId}?`)) return;
+  // Check all items done
+  const keys = ['before','parts','notes','after','sig'];
+  const doneCnt = keys.filter(k=>techCheckState[k]).length;
+  if (doneCnt < 3) {
+    if (!confirm(`${5-doneCnt} checklist items not completed. Close visit anyway?`)) return;
+  } else if (!confirm(`Close visit for ${activeTechJobId}?`)) return;
   const t = tickets.find(x=>x.id===activeTechJobId);
   if (t) t.status = 'completed';
   activeTechJobId = null;
   techCheckState = {checkin:true,before:false,parts:false,notes:false,after:false,sig:false};
-  ['before','parts','notes','after','sig'].forEach(k=>{
-    const row=document.getElementById('act-'+k);const chev=document.getElementById('act-'+k+'-chev');
-    if(row)row.classList.remove('done');if(chev)chev.textContent='›';
-  });
+  ['before','parts','notes','after','sig'].forEach(k => markChecklistPending(k, {before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'}[k]));
   document.getElementById('av-id').textContent='No active job';
   document.getElementById('av-title').textContent='All visits complete!';
   document.getElementById('av-loc').textContent='Go to My Jobs to start a new visit';
+  resetVisitData();
   renderAll();
   showToast('✅ Visit closed! Report generated.');
   goPage('my-jobs');
