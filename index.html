@@ -8,6 +8,7 @@
 <title>Delta Service Hub</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
 <style>
+/* ── VARIABLES ── */
 :root{
   --p:#005AA9;--pd:#004080;--ps:#2E75B6;
   --bg:#F4F6F9;--sfc:#fff;--bdr:#DDE1E7;
@@ -22,58 +23,137 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html{font-size:16px;}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;min-height:100dvh;overflow-x:hidden;padding-bottom:var(--bnav);}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;min-height:100dvh;overflow-x:hidden;}
+
+/* ════════════════════════════════════════
+   LOGIN SCREEN
+════════════════════════════════════════ */
+#login-screen{
+  position:fixed;inset:0;z-index:1000;
+  background:linear-gradient(135deg,var(--pd) 0%,var(--p) 50%,var(--ps) 100%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:24px;overflow-y:auto;
+}
+#login-screen.hidden{display:none;}
+.login-card{
+  background:var(--sfc);border-radius:20px;width:100%;max-width:440px;
+  box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;
+}
+.login-header{
+  background:linear-gradient(135deg,var(--pd),var(--p));
+  padding:28px 28px 24px;text-align:center;
+}
+.login-hex{
+  width:52px;height:52px;background:rgba(255,255,255,.2);
+  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:1.1rem;color:#fff;margin:0 auto 12px;
+}
+.login-title{font-size:1.4rem;font-weight:800;color:#fff;letter-spacing:-.3px;}
+.login-subtitle{font-size:.75rem;color:rgba(255,255,255,.7);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px;}
+.login-body{padding:28px;}
+.login-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt);margin-bottom:6px;display:block;}
+.login-note{font-size:12px;color:var(--muted);margin-bottom:16px;background:var(--bg);border-radius:var(--rx);padding:8px 12px;}
+.user-card{
+  border:2px solid var(--bdr);border-radius:var(--rs);padding:12px 14px;
+  display:flex;align-items:center;gap:12px;cursor:pointer;
+  transition:all .15s;margin-bottom:8px;background:var(--sfc);
+}
+.user-card:hover{border-color:var(--p);background:#f0f7ff;}
+.user-card.selected{border-color:var(--p);background:rgba(0,90,169,.06);}
+.user-card-avatar{
+  width:42px;height:42px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:.8rem;color:#fff;flex-shrink:0;
+}
+.user-card-name{font-size:14px;font-weight:700;color:var(--txt);}
+.user-card-email{font-size:11px;color:var(--muted);margin-top:1px;}
+.user-card-role{
+  margin-left:auto;font-size:11px;font-weight:700;padding:3px 8px;
+  border-radius:10px;white-space:nowrap;
+}
+.role-tag-req_c{background:#dbeafe;color:#1d4ed8;}
+.role-tag-req_com{background:#e0e7ff;color:#4338ca;}
+.role-tag-mgr{background:var(--warn-bg);color:var(--warn);}
+.role-tag-tech{background:var(--ok-bg);color:var(--ok);}
+.role-tag-admin{background:var(--err-bg);color:var(--err);}
+.login-btn{
+  width:100%;min-height:52px;background:var(--p);color:#fff;border:none;
+  border-radius:var(--rs);font-family:inherit;font-size:15px;font-weight:700;
+  cursor:pointer;margin-top:8px;transition:all .15s;
+}
+.login-btn:hover{background:var(--pd);}
+.login-btn:disabled{background:var(--bdr);color:var(--muted);cursor:not-allowed;}
+.login-divider{height:1px;background:var(--bdr);margin:20px 0;position:relative;}
+.login-divider::after{content:'DEMO ACCOUNTS';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--sfc);padding:0 10px;font-size:10px;color:var(--muted);letter-spacing:1.5px;}
+
+/* ════════════════════════════════════════
+   APP SHELL
+════════════════════════════════════════ */
+#app-shell{display:none;}
+#app-shell.visible{display:flex;flex-direction:column;min-height:100vh;}
+body.app-active{padding-bottom:var(--bnav);}
+
 /* TOPBAR */
 .topbar{position:sticky;top:0;z-index:300;height:var(--topbar);background:var(--p);display:flex;align-items:center;padding:0 12px;gap:8px;box-shadow:0 2px 8px rgba(0,0,90,.2);}
-.topbar-menu-btn{width:40px;height:40px;border:none;background:rgba(255,255,255,.15);border-radius:var(--rx);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;}
+.topbar-menu-btn{width:40px;height:40px;border:none;background:rgba(255,255,255,.15);border-radius:var(--rx);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .topbar-logo{display:flex;align-items:center;gap:8px;flex:1;}
 .logo-hex{width:30px;height:30px;background:rgba(255,255,255,.2);clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.7rem;color:#fff;flex-shrink:0;}
 .logo-text{display:flex;flex-direction:column;line-height:1;}
 .logo-main{font-weight:800;font-size:.82rem;color:#fff;letter-spacing:-.2px;}
 .logo-sub{font-size:.58rem;color:rgba(255,255,255,.7);letter-spacing:1.5px;text-transform:uppercase;}
-.topbar-actions{display:flex;gap:6px;}
-.topbar-icon{width:40px;height:40px;border:none;background:rgba(255,255,255,.12);border-radius:var(--rx);color:#fff;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;transition:background .15s;}
-.notif-dot{position:absolute;top:6px;right:6px;width:8px;height:8px;background:var(--err);border-radius:50%;border:2px solid var(--p);}
 .topbar-search{display:none;}
-.topbar-user{display:none;}
-/* MENU */
+.topbar-right{display:flex;align-items:center;gap:6px;}
+.topbar-icon{width:40px;height:40px;border:none;background:rgba(255,255,255,.12);border-radius:var(--rx);color:#fff;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;}
+.notif-dot{position:absolute;top:6px;right:6px;width:8px;height:8px;background:var(--err);border-radius:50%;border:2px solid var(--p);}
+.role-pill-topbar{
+  font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;
+  background:rgba(255,255,255,.2);color:#fff;white-space:nowrap;
+}
+
+/* SLIDE MENU */
 .menu-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;opacity:0;pointer-events:none;transition:opacity .25s;}
 .menu-overlay.open{opacity:1;pointer-events:all;}
 .slide-menu{position:fixed;top:0;left:0;bottom:0;width:min(75vw,280px);background:var(--pd);z-index:401;transform:translateX(-100%);transition:transform .28s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;overflow-y:auto;box-shadow:4px 0 24px rgba(0,0,0,.25);}
 .slide-menu.open{transform:translateX(0);}
 .menu-header{background:rgba(0,0,0,.25);padding:16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.08);}
-.menu-avatar{width:40px;height:40px;border-radius:50%;background:var(--ps);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#fff;flex-shrink:0;}
+.menu-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#fff;flex-shrink:0;}
 .menu-user-name{font-weight:700;font-size:.85rem;color:#fff;}
 .menu-user-role{font-size:.65rem;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
 .menu-section{padding:10px 8px 4px;}
 .menu-section-label{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,.3);padding:0 8px;margin-bottom:4px;}
 .menu-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--rx);cursor:pointer;font-size:14px;font-weight:500;color:rgba(255,255,255,.65);transition:all .15s;margin-bottom:2px;}
-.menu-item:hover,.menu-item:active{background:rgba(255,255,255,.08);color:#fff;}
+.menu-item:hover{background:rgba(255,255,255,.08);color:#fff;}
 .menu-item.active{background:var(--p);color:#fff;font-weight:600;}
 .menu-item .mi-icon{font-size:16px;width:20px;text-align:center;flex-shrink:0;}
 .menu-badge{margin-left:auto;background:var(--err);color:#fff;font-size:.55rem;font-weight:700;padding:2px 5px;border-radius:10px;min-width:18px;text-align:center;}
 .menu-badge.orange{background:var(--warn);}
+.menu-divider{height:1px;background:rgba(255,255,255,.08);margin:4px 12px;}
 .menu-footer{margin-top:auto;padding:12px;border-top:1px solid rgba(255,255,255,.08);}
+
 /* BOTTOM NAV */
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:300;height:var(--bnav);background:var(--sfc);border-top:1px solid var(--bdr);display:flex;align-items:center;box-shadow:0 -2px 12px rgba(0,0,0,.06);padding-bottom:env(safe-area-inset-bottom,0);}
-.bnav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;padding:6px 4px;transition:all .15s;border:none;background:none;min-height:48px;}
+.bnav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;padding:6px 4px;border:none;background:none;min-height:48px;}
 .bnav-icon{font-size:20px;line-height:1;}
 .bnav-label{font-size:10px;font-weight:600;color:var(--muted);}
 .bnav-item.active .bnav-label{color:var(--p);}
+
 /* PAGES */
-.page{display:none;min-height:calc(100vh - var(--topbar) - var(--bnav));}
-.page.active{display:block;animation:fadeUp .2s ease;}
+.page{display:none;min-height:calc(100vh - var(--topbar) - var(--bnav));animation:fadeUp .2s ease;}
+.page.active{display:block;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+
 /* PAGE HEADER */
 .page-hdr{background:var(--sfc);border-bottom:1px solid var(--bdr);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:var(--topbar);z-index:100;}
 .page-title{font-size:18px;font-weight:800;color:var(--txt);}
 .page-title span{color:var(--p);}
 .page-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+
 /* BUTTONS */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:0 16px;border-radius:var(--rs);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .15s;white-space:nowrap;}
 .btn:active{transform:scale(.97);}
 .btn-p{background:var(--p);color:#fff;}
-.btn-p:active,.btn-p:hover{background:var(--pd);}
+.btn-p:hover{background:var(--pd);}
 .btn-outline{background:none;border:1.5px solid var(--bdr);color:var(--txt);}
 .btn-outline:hover{border-color:var(--p);color:var(--p);}
 .btn-danger{background:var(--err);color:#fff;}
@@ -82,14 +162,17 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .btn-lg{min-height:52px;font-size:15px;border-radius:var(--r);width:100%;}
 .btn-sm{min-height:34px;padding:0 12px;font-size:13px;}
 .btn-xs{min-height:30px;padding:0 10px;font-size:12px;}
+.btn[data-access="restricted"]{opacity:.4;cursor:not-allowed;pointer-events:none;}
+
 /* CARDS */
 .card{background:var(--sfc);border-radius:var(--r);border:1px solid var(--bdr);box-shadow:var(--sh);}
 .card-hdr{padding:12px 16px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;}
 .card-title{font-size:14px;font-weight:700;}
 .card-body{padding:16px;}
-/* KPI */
+
+/* KPI GRID */
 .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 14px 0;}
-.kpi-card{background:var(--sfc);border-radius:var(--r);border:1px solid var(--bdr);padding:14px;position:relative;overflow:hidden;transition:all .2s;}
+.kpi-card{background:var(--sfc);border-radius:var(--r);border:1px solid var(--bdr);padding:14px;position:relative;overflow:hidden;}
 .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:var(--r) var(--r) 0 0;}
 .kpi-card.c-blue::before{background:var(--p);}
 .kpi-card.c-green::before{background:var(--ok);}
@@ -105,11 +188,9 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .kpi-icon.c-red{background:rgba(220,38,38,.1);color:var(--err);}
 .kpi-icon.c-teal{background:rgba(13,148,136,.1);color:#0d9488;}
 .kpi-icon.c-purple{background:rgba(124,58,237,.1);color:#7c3aed;}
-.kpi-trend{font-size:11px;font-weight:700;padding:2px 6px;border-radius:10px;}
-.kpi-trend.up{background:var(--ok-bg);color:var(--ok);}
-.kpi-trend.dn{background:var(--err-bg);color:var(--err);}
 .kpi-value{font-size:26px;font-weight:800;color:var(--txt);line-height:1;font-family:'JetBrains Mono';margin-bottom:4px;transition:all .3s;}
 .kpi-label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+
 /* BADGES */
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
 .badge::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor;}
@@ -118,19 +199,20 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .b-prog{background:var(--warn-bg);color:var(--warn);}
 .b-done{background:var(--ok-bg);color:#065f46;}
 .b-hold{background:var(--err-bg);color:#991b1b;}
-.b-parts{background:#fef3c7;color:#d97706;}
 .b-closed{background:#f3f4f6;color:#374151;}
 .b-amc{background:rgba(0,90,169,.1);color:var(--p);}
 .b-maint{background:#e0f2fe;color:#0284c7;}
 .b-install{background:var(--ok-bg);color:var(--ok);}
+.b-parts{background:#fef3c7;color:#d97706;}
+
 /* SECTION LABEL */
 .sec-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--p);padding:14px 16px 8px;display:flex;align-items:center;gap:8px;}
 .sec-label::after{content:'';flex:1;height:1px;background:var(--bdr);}
+
 /* TICKET CARDS */
 .ticket-list{display:flex;flex-direction:column;gap:8px;padding:0 14px 14px;}
-.tkt-card{background:var(--sfc);border-radius:var(--r);border:1px solid var(--bdr);padding:14px;box-shadow:var(--sh);cursor:pointer;transition:all .15s;border-left:4px solid var(--bdr);animation:slideIn .25s ease both;}
-@keyframes slideIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}
-.tkt-card:active{background:#f8fbff;}
+.tkt-card{background:var(--sfc);border-radius:var(--r);border:1px solid var(--bdr);padding:14px;box-shadow:var(--sh);cursor:pointer;border-left:4px solid var(--bdr);animation:slideIn .25s ease both;}
+@keyframes slideIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:translateY(0);}}
 .tkt-card.pri-high{border-left-color:var(--warn);}
 .tkt-card.pri-urgent{border-left-color:var(--err);}
 .tkt-card.pri-normal{border-left-color:var(--ok);}
@@ -139,18 +221,18 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .tkt-title{font-size:14px;font-weight:700;color:var(--txt);margin-bottom:4px;line-height:1.4;}
 .tkt-location{font-size:12px;color:var(--muted);margin-bottom:8px;}
 .tkt-footer{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-.tkt-tech{display:flex;align-items:center;gap:5px;margin-left:auto;}
 .tech-av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;}
 .tkt-actions{display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--bdr);}
-/* FILTERS */
+
+/* SEARCH + FILTERS */
+.search-bar{display:flex;align-items:center;gap:10px;background:var(--sfc);border-bottom:1px solid var(--bdr);padding:10px 14px;}
+.search-input{flex:1;background:var(--bg);border:1.5px solid var(--bdr);border-radius:var(--rs);padding:10px 14px;font-family:inherit;font-size:14px;color:var(--txt);outline:none;transition:border-color .15s;}
+.search-input:focus{border-color:var(--p);}
 .filters{display:flex;gap:8px;padding:10px 14px;overflow-x:auto;background:var(--sfc);border-bottom:1px solid var(--bdr);scrollbar-width:none;}
 .filters::-webkit-scrollbar{display:none;}
 .filter-chip{display:flex;align-items:center;gap:5px;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;border:1.5px solid var(--bdr);background:var(--sfc);color:var(--muted);transition:all .15s;user-select:none;}
 .filter-chip.active{background:var(--p);border-color:var(--p);color:#fff;}
-/* SEARCH */
-.search-bar{display:flex;align-items:center;gap:10px;background:var(--sfc);border-bottom:1px solid var(--bdr);padding:10px 14px;}
-.search-input{flex:1;background:var(--bg);border:1.5px solid var(--bdr);border-radius:var(--rs);padding:10px 14px;font-family:inherit;font-size:14px;color:var(--txt);outline:none;transition:border-color .15s;}
-.search-input:focus{border-color:var(--p);}
+
 /* CHARTS */
 .bar-chart{display:flex;flex-direction:column;gap:10px;}
 .bar-row{display:flex;align-items:center;gap:10px;}
@@ -167,6 +249,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .legend{flex:1;display:flex;flex-direction:column;gap:8px;}
 .legend-row{display:flex;align-items:center;justify-content:space-between;font-size:13px;}
 .legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+
 /* KANBAN */
 .kanban-scroll{overflow-x:auto;padding:14px;scrollbar-width:none;}
 .kanban-scroll::-webkit-scrollbar{display:none;}
@@ -174,20 +257,59 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .k-col{width:220px;flex-shrink:0;}
 .k-col-hdr{padding:8px 12px;border-radius:var(--rs) var(--rs) 0 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;}
 .k-col-body{display:flex;flex-direction:column;gap:6px;padding:6px 0;}
-.k-card{background:var(--sfc);border:1px solid var(--bdr);border-radius:var(--rs);padding:10px;cursor:pointer;box-shadow:var(--sh);transition:border-color .15s;animation:slideIn .2s ease both;}
+.k-card{background:var(--sfc);border:1px solid var(--bdr);border-radius:var(--rs);padding:10px;cursor:pointer;box-shadow:var(--sh);animation:slideIn .2s ease both;}
 .k-card:hover{border-color:var(--p);}
 .k-id{font-family:'JetBrains Mono';font-size:11px;color:var(--p);font-weight:700;margin-bottom:3px;}
 .k-title{font-size:12px;font-weight:600;color:var(--txt);line-height:1.4;}
 .k-meta{font-size:11px;color:var(--muted);margin-top:5px;}
+
 /* WORKFLOW */
 .wf-scroll{overflow-x:auto;scrollbar-width:none;}
 .wf-scroll::-webkit-scrollbar{display:none;}
 .wf-stages{display:flex;align-items:center;width:max-content;padding:4px 0;}
-.wf-node{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 10px;min-width:72px;text-align:center;border-radius:var(--rx);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;border:2px solid var(--bdr);background:var(--sfc);flex-shrink:0;}
+.wf-node{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 10px;min-width:72px;text-align:center;border-radius:var(--rx);font-size:10px;font-weight:700;text-transform:uppercase;border:2px solid var(--bdr);background:var(--sfc);flex-shrink:0;}
 .wf-node.done{background:var(--ok-bg);border-color:var(--ok);color:var(--ok);}
 .wf-node.active{background:rgba(0,90,169,.1);border-color:var(--p);color:var(--p);}
 .wf-node.pending{color:var(--muted);}
 .wf-arrow{width:20px;height:2px;background:var(--bdr);flex-shrink:0;}
+
+/* ACCESS DENIED BANNER */
+.access-denied{
+  background:var(--err-bg);border:1.5px solid var(--err);border-radius:var(--r);
+  padding:16px;margin:14px;display:flex;align-items:center;gap:12px;
+  font-size:13px;color:var(--err);
+}
+.access-denied .ad-icon{font-size:1.5rem;flex-shrink:0;}
+
+/* SCHEDULE / CALENDAR */
+.schedule-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:0;}
+.sch-dow{text-align:center;padding:8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:1px solid var(--bdr);background:var(--bg);}
+.sch-day{min-height:80px;border-right:1px solid var(--bdr);border-bottom:1px solid var(--bdr);padding:4px;cursor:default;}
+.sch-day:nth-child(7n){border-right:none;}
+.sch-day-num{font-size:11px;font-family:'JetBrains Mono';margin-bottom:3px;font-weight:600;}
+.sch-day.today .sch-day-num{color:var(--p);font-weight:800;}
+.sch-event{font-size:9px;padding:2px 4px;border-radius:3px;margin-bottom:2px;font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* TECHNICIAN JOB CARDS */
+.job-card{background:var(--sfc);border-radius:var(--r);border:1px solid var(--bdr);padding:14px;margin:0 14px 10px;box-shadow:var(--sh);border-left:4px solid var(--p);}
+.job-card.active-job{border-left-color:var(--ok);border-color:var(--ok);}
+.job-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.job-card-id{font-family:'JetBrains Mono';font-size:12px;color:var(--p);font-weight:700;}
+.job-card-title{font-size:15px;font-weight:700;margin-bottom:4px;}
+.job-card-meta{font-size:12px;color:var(--muted);line-height:1.6;}
+.action-row{background:var(--sfc);border:1.5px solid var(--bdr);border-radius:var(--r);display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer;transition:all .15s;min-height:64px;margin:0 14px 8px;}
+.action-row:active{border-color:var(--p);background:#f0f7ff;}
+.action-row.done{border-color:var(--ok);background:#f0fdf4;}
+.action-icon{width:44px;height:44px;border-radius:var(--rs);display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0;}
+.action-info{flex:1;}
+.action-title{font-size:15px;font-weight:700;color:var(--txt);}
+.action-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+.sticky-actions{position:sticky;bottom:var(--bnav);background:var(--sfc);border-top:1px solid var(--bdr);padding:12px 14px;display:flex;gap:8px;z-index:200;}
+
+/* ADMIN PANEL */
+.admin-user-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--bdr);font-size:13px;}
+.admin-user-row:last-child{border-bottom:none;}
+
 /* MODAL / BOTTOM SHEET */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:600;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px);}
 .modal-overlay.open{display:flex;animation:modalIn .2s ease;}
@@ -199,6 +321,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .modal-title{font-size:17px;font-weight:800;}
 .modal-close{width:32px;height:32px;border:none;background:var(--bg);border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;}
 .modal-body{padding:16px;}
+
 /* FORMS */
 .form-group{margin-bottom:14px;}
 .form-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--txt);margin-bottom:5px;display:block;}
@@ -208,81 +331,47 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .form-textarea{resize:vertical;min-height:80px;}
 .form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
 .type-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
-.type-btn{border:2px solid var(--bdr);border-radius:var(--rs);padding:12px 8px;text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);transition:all .15s;background:var(--sfc);min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;user-select:none;}
+.type-btn{border:2px solid var(--bdr);border-radius:var(--rs);padding:12px 8px;text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);transition:all .15s;background:var(--sfc);min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
 .type-btn.sel{border-color:var(--p);background:rgba(0,90,169,.06);color:var(--p);}
 .form-sec-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--p);margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid rgba(0,90,169,.15);}
-/* DETAIL SHEET */
-.detail-section{margin-bottom:16px;}
-.detail-section-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700;margin-bottom:6px;}
-.detail-val{font-size:14px;font-weight:600;color:var(--txt);}
+
+/* STATUS PILLS (in detail modal) */
+.status-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.status-pill{padding:7px 14px;border-radius:20px;border:1.5px solid var(--bdr);background:var(--sfc);font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;font-family:inherit;}
 .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
 .detail-field{background:var(--bg);border-radius:var(--rx);padding:10px 12px;}
 .detail-field-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:3px;}
 .detail-field-val{font-size:14px;font-weight:700;color:var(--txt);}
-.status-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
-.status-pill{padding:7px 14px;border-radius:20px;border:1.5px solid var(--bdr);background:var(--sfc);font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;font-family:inherit;}
-.status-pill.sel{font-weight:700;}
-/* NOTIF BANNER */
-.notif-banner{background:rgba(220,38,38,.08);border-bottom:1px solid rgba(220,38,38,.2);padding:10px 14px;display:flex;align-items:flex-start;gap:8px;font-size:13px;}
-.nb-close{margin-left:auto;flex-shrink:0;font-size:16px;cursor:pointer;color:var(--muted);padding:0 4px;background:none;border:none;font-family:inherit;}
+
 /* TOAST */
 .toast{position:fixed;bottom:calc(var(--bnav) + 16px);left:50%;transform:translateX(-50%) translateY(20px);background:#1a2332;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:900;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,.3);}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-/* EMPTY STATE */
-.empty-state{text-align:center;padding:48px 24px;color:var(--muted);}
-.empty-icon{font-size:3rem;margin-bottom:12px;opacity:.4;}
-.empty-title{font-size:16px;font-weight:700;margin-bottom:6px;color:var(--txt);}
-.empty-desc{font-size:13px;line-height:1.6;}
+
 /* MISC */
 .divider{height:1px;background:var(--bdr);margin:12px 0;}
 .row{display:flex;align-items:center;}
 .gap-sm{gap:6px;}
-.gap-md{gap:10px;}
 .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
 .pill-east{background:#dbeafe;color:#1d4ed8;}
 .pill-central{background:#fef3c7;color:#92400e;}
 .pill-west{background:#fce7f3;color:#9d174d;}
-.mt-sm{margin-top:8px;}
-.mt-md{margin-top:14px;}
 .pad-page{padding:0 0 24px;}
-/* INVENTORY & AMC */
+.empty-state{text-align:center;padding:40px 24px;color:var(--muted);}
+.empty-icon{font-size:2.5rem;margin-bottom:10px;opacity:.4;}
+.empty-title{font-size:15px;font-weight:700;margin-bottom:6px;color:var(--txt);}
 .inv-card{background:var(--sfc);border-radius:var(--r);border:1px solid var(--bdr);padding:14px;margin:0 14px 10px;box-shadow:var(--sh);}
-.inv-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px;}
-.inv-code{font-family:'JetBrains Mono';font-size:12px;color:var(--p);font-weight:700;}
-.inv-name{font-size:14px;font-weight:700;color:var(--txt);}
 .stock-bar-wrap{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin:6px 0;}
 .stock-fill{height:100%;border-radius:3px;}
-.inv-meta{display:flex;gap:12px;font-size:12px;color:var(--muted);flex-wrap:wrap;}
 .amc-card{background:var(--sfc);border-radius:var(--r);border:1px solid var(--bdr);border-left:4px solid var(--p);padding:14px;margin:0 14px 10px;box-shadow:var(--sh);}
 .amc-card.warn{border-left-color:var(--warn);}
-.amc-name{font-size:15px;font-weight:700;color:var(--txt);margin-bottom:4px;}
-.amc-meta{font-size:12px;color:var(--muted);line-height:1.6;}
-.amc-prog-wrap{margin-top:10px;}
-.amc-prog-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px;}
 .amc-prog-track{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;}
 .amc-prog-fill{height:100%;border-radius:3px;}
-/* TECH APP */
-.job-banner{background:linear-gradient(135deg,var(--p),var(--ps));padding:16px;color:#fff;margin:14px;border-radius:var(--r);}
-.job-banner-id{font-family:'JetBrains Mono';font-size:12px;opacity:.7;margin-bottom:4px;}
-.job-banner-title{font-size:16px;font-weight:800;margin-bottom:6px;}
-.action-list{display:flex;flex-direction:column;gap:10px;padding:0 14px;}
-.action-row{background:var(--sfc);border:1.5px solid var(--bdr);border-radius:var(--r);display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer;transition:all .15s;min-height:64px;}
-.action-row:active{border-color:var(--p);background:#f0f7ff;}
-.action-row.done{border-color:var(--ok);background:#f0fdf4;}
-.action-icon{width:44px;height:44px;border-radius:var(--rs);display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0;}
-.action-info{flex:1;}
-.action-title{font-size:15px;font-weight:700;color:var(--txt);}
-.action-sub{font-size:12px;color:var(--muted);margin-top:2px;}
-.action-chevron{color:var(--muted);font-size:16px;flex-shrink:0;}
-.photo-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 14px;}
-.photo-slot{aspect-ratio:1;background:var(--bg);border:2px dashed var(--bdr);border-radius:var(--rs);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:1.5rem;cursor:pointer;}
-.photo-slot span{font-size:10px;color:var(--muted);margin-top:4px;}
-.sig-pad{background:var(--bg);border:2px dashed var(--bdr);border-radius:var(--r);height:100px;margin:0 14px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);cursor:pointer;}
-.sticky-actions{position:sticky;bottom:var(--bnav);background:var(--sfc);border-top:1px solid var(--bdr);padding:12px 14px;display:flex;gap:8px;z-index:200;}
+.notif-banner{background:rgba(220,38,38,.08);border-bottom:1px solid rgba(220,38,38,.2);padding:10px 14px;display:flex;align-items:flex-start;gap:8px;font-size:13px;}
+
 /* DESKTOP OVERRIDES */
 @media(min-width:768px){
   :root{--bnav:0px;}
-  body{padding-bottom:0;overflow:hidden;height:100vh;}
+  body.app-active{padding-bottom:0;overflow:hidden;height:100vh;}
   .bottom-nav{display:none;}
   .topbar{padding:0 20px;}
   .topbar-menu-btn{display:none;}
@@ -290,311 +379,325 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
   .topbar-search input{border:none;background:none;outline:none;color:#fff;font-family:inherit;font-size:13px;width:100%;}
   .topbar-search input::placeholder{color:rgba(255,255,255,.55);}
   .topbar-search span{color:rgba(255,255,255,.6);}
-  .topbar-user{display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 10px 5px 6px;border-radius:var(--rs);background:rgba(255,255,255,.1);}
-  .topbar-user-av{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;}
-  .topbar-user-name{font-size:13px;font-weight:600;color:#fff;}
   .app-body{display:flex;height:calc(100vh - 56px);overflow:hidden;}
   .slide-menu{position:relative;top:auto;left:auto;bottom:auto;transform:none!important;width:220px;flex-shrink:0;box-shadow:none;border-right:1px solid rgba(255,255,255,.06);transition:none;}
   .menu-overlay{display:none!important;}
-  .main-content{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
+  .main-content{flex:1;overflow-y:auto;}
   .main-content::-webkit-scrollbar{width:5px;}
   .main-content::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:3px;}
   .kpi-grid{grid-template-columns:repeat(4,1fr);padding:16px 20px 0;}
   .grid-d2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   .ticket-list{padding:0 20px 20px;}
-  .inv-card{margin:0 20px 10px;}
-  .amc-card{margin:0 20px 10px;}
-  .kanban-scroll{padding:20px;}
-  .action-list{padding:0 20px;}
-  .photo-grid{padding:0 20px;}
-  .sig-pad{margin:0 20px;}
-  .job-banner{margin:20px;}
-  .page-hdr{position:sticky;top:0;z-index:200;}
+  .inv-card,.amc-card{margin-left:20px;margin-right:20px;}
+  .page-hdr{top:0;}
   .page{min-height:unset;}
   .modal-overlay{align-items:center;}
   .modal-sheet{border-radius:var(--r);max-height:85vh;max-width:540px;}
-}
-@media(min-width:1100px){
-  .slide-menu{width:240px;}
+  .login-card{max-width:480px;}
 }
 </style>
 </head>
 <body>
-
-<!-- TOAST -->
 <div class="toast" id="toast"></div>
 
-<!-- TOPBAR -->
-<header class="topbar">
-  <button class="topbar-menu-btn" onclick="toggleMenu()">☰</button>
-  <div class="topbar-logo">
-    <div class="logo-hex">Δ</div>
-    <div class="logo-text">
-      <span class="logo-main">Service Hub</span>
-      <span class="logo-sub">Delta Fitness</span>
+<!-- ════════════════════════════════════════
+     LOGIN SCREEN
+════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-hex">Δ</div>
+      <div class="login-title">Delta Service Hub</div>
+      <div class="login-subtitle">Role-Based Access · Demo Mode</div>
+    </div>
+    <div class="login-body">
+      <div class="login-note">
+        🔒 Select a demo account to log in. Each role has different permissions and menus.
+      </div>
+      <label class="login-label">Choose Your Account</label>
+      <div id="user-selector"></div>
+      <button class="login-btn" id="login-btn" disabled onclick="doLogin()">
+        Log In to Service Hub →
+      </button>
     </div>
   </div>
-  <div class="topbar-search"><span>🔍</span><input type="text" placeholder="Search tickets..." oninput="handleSearch(this.value)"/></div>
-  <div class="topbar-actions">
-    <button class="topbar-icon" onclick="showNotifications()">🔔<div class="notif-dot" id="notif-dot"></div></button>
-  </div>
-  <div class="topbar-user">
-    <div class="topbar-user-av">AM</div>
-    <span class="topbar-user-name">Ahmed M. — Manager</span>
-  </div>
-</header>
+</div>
 
-<div class="app-body" id="app-body">
-<!-- SLIDE MENU -->
-<div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
-<nav class="slide-menu" id="slide-menu">
-  <div class="menu-header">
-    <div class="menu-avatar">AM</div>
-    <div><div class="menu-user-name">Ahmed Mansour</div><div class="menu-user-role">Service Manager</div></div>
-  </div>
-  <div class="menu-section">
-    <div class="menu-section-label">Main</div>
-    <div class="menu-item active" data-page="dashboard" onclick="goPage('dashboard',this)"><span class="mi-icon">📊</span>Dashboard</div>
-    <div class="menu-item" data-page="tickets" onclick="goPage('tickets',this)"><span class="mi-icon">🎫</span>Service Tickets<span class="menu-badge" id="menu-open-count">0</span></div>
-    <div class="menu-item" data-page="workflow" onclick="goPage('workflow',this)"><span class="mi-icon">⚡</span>Workflow</div>
-    <div class="menu-item" data-page="techapp" onclick="goPage('techapp',this)"><span class="mi-icon">📱</span>Technician App</div>
-  </div>
-  <div class="menu-section">
-    <div class="menu-section-label">Operations</div>
-    <div class="menu-item" data-page="inventory" onclick="goPage('inventory',this)"><span class="mi-icon">📦</span>Inventory<span class="menu-badge orange">9</span></div>
-    <div class="menu-item" data-page="amc" onclick="goPage('amc',this)"><span class="mi-icon">🔄</span>AMC / PM</div>
-    <div class="menu-item" data-page="reports" onclick="goPage('reports',this)"><span class="mi-icon">📋</span>Reports</div>
-  </div>
-  <div class="menu-footer">
-    <div class="menu-item" style="margin:0" onclick="clearAllData()"><span class="mi-icon">🗑️</span>Reset Demo Data</div>
-  </div>
-</nav>
-
-<!-- MAIN CONTENT -->
-<main class="main-content" id="main-content">
-
-<!-- ═══ DASHBOARD ═══ -->
-<div id="page-dashboard" class="page active pad-page">
-  <div class="page-hdr">
-    <div>
-      <div class="page-title">Operations <span>Dashboard</span></div>
-      <div class="page-sub" id="dash-date">Loading...</div>
-    </div>
-    <button class="btn btn-p btn-sm" onclick="openNewTicket()">+ New Ticket</button>
-  </div>
-  <div class="notif-banner" id="sla-banner" style="display:none">
-    <span>⚠️</span>
-    <span id="sla-banner-text">SLA breaches detected.</span>
-    <button class="nb-close" onclick="this.closest('.notif-banner').style.display='none'">✕</button>
-  </div>
-  <!-- KPI CARDS -->
-  <div class="kpi-grid mt-sm">
-    <div class="kpi-card c-blue">
-      <div class="kpi-top"><div class="kpi-icon c-blue">🎫</div></div>
-      <div class="kpi-value" id="kpi-open">0</div><div class="kpi-label">Open Tickets</div>
-    </div>
-    <div class="kpi-card c-orange">
-      <div class="kpi-top"><div class="kpi-icon c-orange">🔧</div></div>
-      <div class="kpi-value" id="kpi-assigned">0</div><div class="kpi-label">Assigned Jobs</div>
-    </div>
-    <div class="kpi-card c-red">
-      <div class="kpi-top"><div class="kpi-icon c-red">📦</div></div>
-      <div class="kpi-value" id="kpi-pending">0</div><div class="kpi-label">Pending Parts</div>
-    </div>
-    <div class="kpi-card c-green">
-      <div class="kpi-top"><div class="kpi-icon c-green">✅</div></div>
-      <div class="kpi-value" id="kpi-completed">0</div><div class="kpi-label">Completed</div>
-    </div>
-    <div class="kpi-card c-teal">
-      <div class="kpi-top"><div class="kpi-icon c-teal">📄</div></div>
-      <div class="kpi-value" id="kpi-amc">34</div><div class="kpi-label">AMC Active</div>
-    </div>
-    <div class="kpi-card c-purple">
-      <div class="kpi-top"><div class="kpi-icon c-purple">📅</div></div>
-      <div class="kpi-value" id="kpi-pm">5</div><div class="kpi-label">PM Due Week</div>
-    </div>
-    <div class="kpi-card c-green">
-      <div class="kpi-top"><div class="kpi-icon c-green">⏱️</div></div>
-      <div class="kpi-value" id="kpi-sla">0%</div><div class="kpi-label">SLA Compliance</div>
-    </div>
-    <div class="kpi-card c-blue">
-      <div class="kpi-top"><div class="kpi-icon c-blue">🔢</div></div>
-      <div class="kpi-value" id="kpi-total">0</div><div class="kpi-label">Total Tickets</div>
-    </div>
-  </div>
-  <!-- Charts -->
-  <div class="sec-label mt-md">Analytics</div>
-  <div class="grid-d2" style="padding:0 14px;gap:10px;">
-    <div class="card">
-      <div class="card-hdr"><div class="card-title">Status Breakdown</div></div>
-      <div class="card-body" style="padding:14px;">
-        <div class="donut-row">
-          <div class="donut-wrap">
-            <svg width="110" height="110" viewBox="0 0 110 110" id="donut-svg">
-              <circle cx="55" cy="55" r="46" fill="none" stroke="#e8eaed" stroke-width="13"/>
-            </svg>
-            <div class="donut-center"><div class="donut-val" id="donut-total">0</div><div class="donut-lbl">Total</div></div>
-          </div>
-          <div class="legend" id="status-legend"></div>
-        </div>
+<!-- ════════════════════════════════════════
+     APP SHELL
+════════════════════════════════════════ -->
+<div id="app-shell">
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <button class="topbar-menu-btn" onclick="toggleMenu()">☰</button>
+    <div class="topbar-logo">
+      <div class="logo-hex">Δ</div>
+      <div class="logo-text">
+        <span class="logo-main">Service Hub</span>
+        <span class="logo-sub">Delta Fitness</span>
       </div>
     </div>
-    <div class="card">
-      <div class="card-hdr"><div class="card-title">By Type</div></div>
-      <div class="card-body" style="padding:14px;" id="type-chart"></div>
+    <div class="topbar-search"><span>🔍</span><input type="text" placeholder="Search..." oninput="handleSearch(this.value)"/></div>
+    <div class="topbar-right">
+      <span class="role-pill-topbar" id="role-pill">—</span>
+      <button class="topbar-icon">🔔<div class="notif-dot" id="notif-dot"></div></button>
+      <button class="topbar-icon" onclick="doLogout()" title="Log out">🚪</button>
     </div>
-  </div>
-  <div style="padding:0 14px;margin-top:10px;">
-    <div class="card">
-      <div class="card-hdr"><div class="card-title">Recent Tickets</div><button class="btn btn-ghost btn-sm" onclick="goPage('tickets',document.querySelector('[data-page=tickets]'))">View All →</button></div>
-      <div id="dash-recent-tickets" style="padding:0 0 8px;"></div>
-    </div>
-  </div>
-</div>
+  </header>
 
-<!-- ═══ TICKETS ═══ -->
-<div id="page-tickets" class="page pad-page">
-  <div class="page-hdr">
-    <div>
-      <div class="page-title">Service <span>Tickets</span></div>
-      <div class="page-sub" id="ticket-count-label">0 tickets</div>
-    </div>
-    <div class="row gap-sm">
-      <button class="btn btn-outline btn-sm" id="view-toggle" onclick="toggleView()">🗂 Kanban</button>
-      <button class="btn btn-p btn-sm" onclick="openNewTicket()">+ New</button>
-    </div>
-  </div>
-  <div class="search-bar">
-    <input class="search-input" placeholder="🔍 Search tickets..." oninput="handleSearch(this.value)" id="ticket-search"/>
-  </div>
-  <div class="filters" id="filter-bar">
-    <div class="filter-chip active" data-filter="all" onclick="setFilter('all',this)">All</div>
-    <div class="filter-chip" data-filter="new" onclick="setFilter('new',this)">🆕 New</div>
-    <div class="filter-chip" data-filter="in-progress" onclick="setFilter('in-progress',this)">⚙️ In Progress</div>
-    <div class="filter-chip" data-filter="assigned" onclick="setFilter('assigned',this)">👷 Assigned</div>
-    <div class="filter-chip" data-filter="completed" onclick="setFilter('completed',this)">✅ Completed</div>
-    <div class="filter-chip" data-filter="on-hold" onclick="setFilter('on-hold',this)">⏸ On Hold</div>
-    <div class="filter-chip" data-filter="maintenance" onclick="setFilter('maintenance',this)">🔧 Maint.</div>
-    <div class="filter-chip" data-filter="installation" onclick="setFilter('installation',this)">🏗️ Install</div>
-    <div class="filter-chip" data-filter="spare-parts" onclick="setFilter('spare-parts',this)">📦 Parts</div>
-    <div class="filter-chip" data-filter="amc" onclick="setFilter('amc',this)">📄 AMC</div>
-  </div>
-  <!-- List View -->
-  <div id="tkt-list-view">
-    <div class="ticket-list" id="ticket-list-container"></div>
-  </div>
-  <!-- Kanban View -->
-  <div id="tkt-kanban-view" style="display:none;">
-    <div class="kanban-scroll"><div class="kanban-wrap" id="kanban-container"></div></div>
-  </div>
-</div>
+  <div class="app-body" id="app-body">
+    <!-- SLIDE MENU -->
+    <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
+    <nav class="slide-menu" id="slide-menu">
+      <div class="menu-header">
+        <div class="menu-avatar" id="menu-avatar">?</div>
+        <div>
+          <div class="menu-user-name" id="menu-user-name">—</div>
+          <div class="menu-user-role" id="menu-user-role">—</div>
+        </div>
+      </div>
+      <div id="menu-nav-items"></div>
+      <div class="menu-footer">
+        <div class="menu-item" style="margin:0" onclick="doLogout()"><span class="mi-icon">🚪</span>Log Out</div>
+      </div>
+    </nav>
 
-<!-- ═══ WORKFLOW ═══ -->
-<div id="page-workflow" class="page pad-page">
-  <div class="page-hdr"><div><div class="page-title">Workflow <span>Automation</span></div><div class="page-sub">4 types · Auto-stage transitions</div></div></div>
-  <div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
-    <div class="card"><div class="card-hdr"><div class="row gap-sm"><div style="width:34px;height:34px;background:#e0f2fe;border-radius:var(--rx);display:flex;align-items:center;justify-content:center;">🔧</div><div><div class="card-title">Maintenance</div><div style="font-size:11px;color:var(--muted)">7 stages · Avg 3.2 days</div></div></div><span class="badge b-maint">Active</span></div><div class="card-body" style="padding:14px;"><div class="wf-scroll"><div class="wf-stages"><div class="wf-node done">✓ New</div><div class="wf-arrow"></div><div class="wf-node done">✓ Validate</div><div class="wf-arrow"></div><div class="wf-node done">✓ Plan</div><div class="wf-arrow"></div><div class="wf-node active">→ Assigned</div><div class="wf-arrow" style="background:var(--p)"></div><div class="wf-node pending">In Progress</div><div class="wf-arrow"></div><div class="wf-node pending">Completed</div><div class="wf-arrow"></div><div class="wf-node pending">Closed</div></div></div><div style="margin-top:12px;background:var(--bg);border-radius:var(--rx);padding:10px;font-size:12px;"><strong style="color:var(--p)">Auto-Assignment:</strong> Lowest workload tech in matching region. <strong style="color:var(--warn)">SLA:</strong> High=4h, Normal=24h.</div></div></div>
-    <div class="card"><div class="card-hdr"><div class="row gap-sm"><div style="width:34px;height:34px;background:var(--ok-bg);border-radius:var(--rx);display:flex;align-items:center;justify-content:center;">🏗️</div><div><div class="card-title">Installation</div><div style="font-size:11px;color:var(--muted)">7 stages · Avg 5.8 days</div></div></div><span class="badge b-install">Active</span></div><div class="card-body" style="padding:14px;"><div class="wf-scroll"><div class="wf-stages"><div class="wf-node done">✓ New</div><div class="wf-arrow"></div><div class="wf-node done">✓ Validate</div><div class="wf-arrow"></div><div class="wf-node active">→ Schedule</div><div class="wf-arrow" style="background:var(--p)"></div><div class="wf-node pending">On Site</div><div class="wf-arrow"></div><div class="wf-node pending">Installed</div><div class="wf-arrow"></div><div class="wf-node pending">Handover</div><div class="wf-arrow"></div><div class="wf-node pending">Closed</div></div></div></div></div>
-    <div class="card"><div class="card-hdr"><div class="row gap-sm"><div style="width:34px;height:34px;background:#fef3c7;border-radius:var(--rx);display:flex;align-items:center;justify-content:center;">📦</div><div><div class="card-title">Spare Parts</div><div style="font-size:11px;color:var(--muted)">7 stages · Avg 8.4 days</div></div></div><span class="badge b-parts">Active</span></div><div class="card-body" style="padding:14px;"><div class="wf-scroll"><div class="wf-stages"><div class="wf-node done">✓ New</div><div class="wf-arrow"></div><div class="wf-node done">✓ Tech Review</div><div class="wf-arrow"></div><div class="wf-node done">✓ Stock Check</div><div class="wf-arrow"></div><div class="wf-node active">→ Quotation</div><div class="wf-arrow" style="background:var(--p)"></div><div class="wf-node pending">Approval</div><div class="wf-arrow"></div><div class="wf-node pending">Delivery</div><div class="wf-arrow"></div><div class="wf-node pending">Closed</div></div></div></div></div>
-    <div class="card"><div class="card-hdr"><div class="row gap-sm"><div style="width:34px;height:34px;background:rgba(0,90,169,.1);border-radius:var(--rx);display:flex;align-items:center;justify-content:center;">📄</div><div><div class="card-title">AMC / Renewal</div><div style="font-size:11px;color:var(--muted)">6 stages · Auto-renews 30d before</div></div></div><span class="badge b-amc">Active</span></div><div class="card-body" style="padding:14px;"><div class="wf-scroll"><div class="wf-stages"><div class="wf-node done">✓ New</div><div class="wf-arrow"></div><div class="wf-node done">✓ Validate</div><div class="wf-arrow"></div><div class="wf-node done">✓ Approval</div><div class="wf-arrow"></div><div class="wf-node done">✓ Activated</div><div class="wf-arrow"></div><div class="wf-node active">→ PM Scheduled</div><div class="wf-arrow" style="background:var(--p)"></div><div class="wf-node pending">Renewal Alert</div></div></div></div></div>
-  </div>
-</div>
+    <!-- MAIN CONTENT -->
+    <main class="main-content" id="main-content">
 
-<!-- ═══ TECH APP ═══ -->
-<div id="page-techapp" class="page pad-page">
-  <div class="page-hdr"><div><div class="page-title">Field <span>Technician</span></div><div class="page-sub">Marcus Reid · East Region</div></div><span class="badge b-done" id="tech-job-count">Loading...</span></div>
-  <div class="job-banner">
-    <div class="job-banner-id" id="tech-active-id">No active job</div>
-    <div class="job-banner-title" id="tech-active-title">Select a ticket to start</div>
-    <div style="font-size:12px;opacity:.8" id="tech-active-loc">Tap a ticket in the Tickets page and assign to yourself</div>
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      <span style="background:rgba(255,255,255,.2);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;" id="tech-timer">⏱ --:--</span>
-      <span style="background:rgba(255,255,255,.2);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;" id="tech-priority-badge">--</span>
-    </div>
-  </div>
-  <div class="sec-label">Job Actions</div>
-  <div class="action-list">
-    <div class="action-row done" id="act-checkin" onclick="toggleAction('checkin')">
-      <div class="action-icon" style="background:var(--ok-bg)">📍</div>
-      <div class="action-info"><div class="action-title" id="act-checkin-title" style="color:var(--ok)">GPS Checked In ✓</div><div class="action-sub" id="act-checkin-sub">09:32 AM · 0.2km from site</div></div>
-      <div class="action-chevron">✅</div>
-    </div>
-    <div class="action-row" id="act-before" onclick="toggleAction('before')">
-      <div class="action-icon" style="background:#e0f2fe">📸</div>
-      <div class="action-info"><div class="action-title">Before Photos</div><div class="action-sub" id="act-before-sub">Tap to capture</div></div>
-      <div class="action-chevron" id="act-before-chev">›</div>
-    </div>
-    <div class="action-row" id="act-parts" onclick="toggleAction('parts')">
-      <div class="action-icon" style="background:#fef3c7">🔩</div>
-      <div class="action-info"><div class="action-title">Spare Parts Used</div><div class="action-sub" id="act-parts-sub">Tap to log parts</div></div>
-      <div class="action-chevron" id="act-parts-chev">›</div>
-    </div>
-    <div class="action-row" id="act-notes" onclick="toggleAction('notes')">
-      <div class="action-icon" style="background:#f3e8ff">📝</div>
-      <div class="action-info"><div class="action-title">Technician Notes</div><div class="action-sub" id="act-notes-sub">Tap to add notes</div></div>
-      <div class="action-chevron" id="act-notes-chev">›</div>
-    </div>
-    <div class="action-row" id="act-after" onclick="toggleAction('after')">
-      <div class="action-icon" style="background:#dcfce7">📷</div>
-      <div class="action-info"><div class="action-title">After Photos</div><div class="action-sub" id="act-after-sub">Tap to capture</div></div>
-      <div class="action-chevron" id="act-after-chev">›</div>
-    </div>
-    <div class="action-row" id="act-sig" onclick="toggleAction('sig')">
-      <div class="action-icon" style="background:#fef3c7">✍️</div>
-      <div class="action-info"><div class="action-title">Customer Signature</div><div class="action-sub" id="act-sig-sub">Tap to collect signature</div></div>
-      <div class="action-chevron" id="act-sig-chev">›</div>
-    </div>
-  </div>
-  <div style="height:80px;"></div>
-  <div class="sticky-actions">
-    <button class="btn btn-outline" style="min-height:52px;flex:1;font-size:14px;border-radius:var(--r);" onclick="showToast('Opening WhatsApp...')">💬 WhatsApp</button>
-    <button class="btn btn-p" style="min-height:52px;flex:2;font-size:15px;border-radius:var(--r);" onclick="closeActiveVisit()">✅ Close Visit</button>
-  </div>
-</div>
+      <!-- ═══════════ DASHBOARD (shared, filtered by role) ═══════════ -->
+      <div id="page-dashboard" class="page pad-page">
+        <div class="page-hdr">
+          <div>
+            <div class="page-title" id="dash-page-title">Dashboard</div>
+            <div class="page-sub" id="dash-date">—</div>
+          </div>
+          <button class="btn btn-p btn-sm" id="dash-new-btn" onclick="openNewTicket()">+ New Request</button>
+        </div>
+        <div class="notif-banner" id="sla-banner" style="display:none">
+          <span>⚠️</span><span id="sla-text">SLA breaches detected.</span>
+          <button style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:16px;color:var(--muted)" onclick="this.closest('.notif-banner').style.display='none'">✕</button>
+        </div>
+        <div class="kpi-grid" id="dash-kpis" style="margin-top:12px;"></div>
+        <div class="sec-label" style="margin-top:12px;" id="dash-chart-label">Analytics</div>
+        <div class="grid-d2" style="padding:0 14px;gap:10px;" id="dash-charts"></div>
+        <div style="padding:0 14px;margin-top:10px;" id="dash-recent-wrap">
+          <div class="card">
+            <div class="card-hdr"><div class="card-title" id="dash-recent-title">Recent Tickets</div><button class="btn btn-ghost btn-sm" onclick="goPageBnav('tickets')">View All →</button></div>
+            <div id="dash-recent"></div>
+          </div>
+        </div>
+      </div>
 
-<!-- ═══ INVENTORY ═══ -->
-<div id="page-inventory" class="page pad-page">
-  <div class="page-hdr"><div><div class="page-title">Inventory <span>& Parts</span></div><div class="page-sub">156 SKUs · 3 warehouses</div></div><button class="btn btn-p btn-sm" onclick="showToast('Add item coming soon')">+ Add</button></div>
-  <div class="search-bar"><input class="search-input" placeholder="🔍 Search inventory..."/></div>
-  <div style="background:var(--warn-bg);border-bottom:2px solid #fcd34d;padding:10px 14px;font-size:13px;display:flex;align-items:center;gap:8px;">⚠️ <span><strong>9 items below reorder level.</strong></span><button class="btn btn-p btn-xs" style="margin-left:auto;" onclick="showToast('PO created!')">Create PO</button></div>
-  <div class="sec-label">Stock Items</div>
-  <div class="inv-card"><div class="inv-top"><div><div class="inv-code">SPC-0041</div><div class="inv-name">Treadmill Belt — Life Fitness T5</div></div><button class="btn btn-danger btn-xs" onclick="showToast('Reorder created for SPC-0041')">Reorder</button></div><div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;"><span class="badge b-maint">Cardio</span><span class="pill" style="background:var(--err-bg);color:var(--err)">Critical</span></div><div class="stock-bar-wrap"><div class="stock-fill" style="width:20%;background:var(--err)"></div></div><div class="inv-meta"><span>Qty: <strong style="color:var(--err)">2</strong></span><span>Reserved: 1</span><span>Reorder: 10</span><span>East WH</span><span>7d lead</span></div></div>
-  <div class="inv-card"><div class="inv-top"><div><div class="inv-code">SPC-0038</div><div class="inv-name">Console Board — Precor EFX 885</div></div><button class="btn btn-danger btn-xs" onclick="showToast('Urgent PO sent for SPC-0038')">Urgent</button></div><div style="display:flex;gap:6px;margin-bottom:6px;"><span class="badge" style="background:#ede9fe;color:#5b21b6">Electronics</span><span class="pill" style="background:var(--err-bg);color:var(--err)">Critical</span></div><div class="stock-bar-wrap"><div class="stock-fill" style="width:10%;background:var(--err)"></div></div><div class="inv-meta"><span>Qty: <strong style="color:var(--err)">1</strong></span><span>Reserved: 1</span><span>Reorder: 5</span><span>Central WH</span></div></div>
-  <div class="inv-card"><div class="inv-top"><div><div class="inv-code">SPC-0029</div><div class="inv-name">Cable Assembly — Cybex VR3</div></div><button class="btn btn-outline btn-xs" onclick="showToast('SPC-0029 details')">View</button></div><div style="display:flex;gap:6px;margin-bottom:6px;"><span class="badge b-install">Strength</span><span class="pill" style="background:var(--ok-bg);color:var(--ok)">Good</span></div><div class="stock-bar-wrap"><div class="stock-fill" style="width:80%;background:var(--ok)"></div></div><div class="inv-meta"><span>Qty: <strong style="color:var(--ok)">24</strong></span><span>Reserved: 4</span><span>Reorder: 8</span><span>East WH</span></div></div>
-</div>
+      <!-- ═══════════ MY REQUESTS (Requester) ═══════════ -->
+      <div id="page-my-requests" class="page pad-page">
+        <div class="page-hdr">
+          <div><div class="page-title">My <span>Requests</span></div><div class="page-sub" id="my-req-sub">Your submitted tickets</div></div>
+          <button class="btn btn-p btn-sm" onclick="openNewTicket()">+ New</button>
+        </div>
+        <div class="filters">
+          <div class="filter-chip active" onclick="setMyFilter('all',this)">All</div>
+          <div class="filter-chip" onclick="setMyFilter('new',this)">🆕 New</div>
+          <div class="filter-chip" onclick="setMyFilter('in-progress',this)">⚙️ In Progress</div>
+          <div class="filter-chip" onclick="setMyFilter('completed',this)">✅ Done</div>
+        </div>
+        <div class="ticket-list" id="my-requests-list"></div>
+      </div>
 
-<!-- ═══ AMC ═══ -->
-<div id="page-amc" class="page pad-page">
-  <div class="page-hdr"><div><div class="page-title">AMC & <span>PM Scheduler</span></div><div class="page-sub">34 active · 5 PM due this week</div></div><button class="btn btn-p btn-sm" onclick="showToast('New AMC form coming soon')">+ New AMC</button></div>
-  <div class="kpi-grid mt-sm" style="grid-template-columns:1fr 1fr 1fr 1fr;">
-    <div class="kpi-card c-blue" style="padding:10px;"><div class="kpi-value" style="font-size:22px;">34</div><div class="kpi-label">Active</div></div>
-    <div class="kpi-card c-orange" style="padding:10px;"><div class="kpi-value" style="font-size:22px;">6</div><div class="kpi-label">Renewal</div></div>
-    <div class="kpi-card c-red" style="padding:10px;"><div class="kpi-value" style="font-size:22px;">2</div><div class="kpi-label">Expired</div></div>
-    <div class="kpi-card c-green" style="padding:10px;"><div class="kpi-value" style="font-size:22px;">128</div><div class="kpi-label">PM Done</div></div>
-  </div>
-  <div class="sec-label">Active Contracts</div>
-  <div class="amc-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;"><div><div class="amc-name">Delta Downtown — Full Gym AMC</div><div class="amc-meta">#AMC-2025-001 · Jan 2025 – Dec 2025 · Monthly PM</div><div style="display:flex;gap:6px;margin-top:6px;"><span class="badge b-done" style="font-size:10px">4 PM done</span><span class="pill pill-east">East</span></div></div><button class="btn btn-outline btn-xs" onclick="showToast('AMC-001 management panel')">Manage</button></div><div class="amc-prog-wrap"><div class="amc-prog-label"><span>Year Progress</span><span>4 / 12 visits</span></div><div class="amc-prog-track"><div class="amc-prog-fill" style="width:33%;background:var(--p)"></div></div></div></div>
-  <div class="amc-card warn"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;"><div><div class="amc-name">Delta Westside — Cardio AMC ⚠️</div><div class="amc-meta">#AMC-2024-019 · Expires in 28 days · Quarterly PM</div><div style="display:flex;gap:6px;margin-top:6px;"><span class="badge" style="background:var(--warn-bg);color:var(--warn);font-size:10px">Renewal Alert</span><span class="pill pill-central">Central</span></div></div><button class="btn btn-p btn-xs" onclick="showToast('AMC-019 renewal initiated!')">Renew</button></div><div class="amc-prog-wrap"><div class="amc-prog-label"><span>Year Progress</span><span>3 / 4 visits</span></div><div class="amc-prog-track"><div class="amc-prog-fill" style="width:90%;background:var(--warn)"></div></div></div></div>
-</div>
+      <!-- ═══════════ CREATE REQUEST ═══════════ -->
+      <div id="page-create-request" class="page pad-page">
+        <div class="page-hdr">
+          <div><div class="page-title">Create <span>Request</span></div><div class="page-sub">Submit a new service request</div></div>
+        </div>
+        <div style="padding:16px;">
+          <div class="form-sec-title" style="margin-bottom:16px;">Request Type</div>
+          <div class="type-grid">
+            <div class="type-btn sel" data-type="maintenance" onclick="selectType(this)">🔧<br>Maintenance</div>
+            <div class="type-btn" data-type="installation" onclick="selectType(this)">🏗️<br>Installation</div>
+            <div class="type-btn" data-type="spare-parts" onclick="selectType(this)">📦<br>Spare Parts</div>
+            <div class="type-btn" data-type="amc" onclick="selectType(this)">📄<br>AMC</div>
+          </div>
+          <div class="form-group"><label class="form-label">Contact Person <span class="req">*</span></label><input class="form-input" id="cr-customer" placeholder="Your name"/></div>
+          <div class="form-grid-2">
+            <div class="form-group"><label class="form-label">Team / Department <span class="req">*</span></label><select class="form-select" id="cr-branch"></select></div>
+            <div class="form-group"><label class="form-label">Region</label><select class="form-select" id="cr-region"><option value="east">East</option><option value="central">Central</option><option value="west">West</option></select></div>
+          </div>
+          <div class="form-group"><label class="form-label">Equipment</label><input class="form-input" id="cr-equipment" placeholder="e.g. Treadmill — Life Fitness T5"/></div>
+          <div class="form-group"><label class="form-label">Priority</label><select class="form-select" id="cr-priority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+          <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="cr-description" placeholder="Describe the issue or request..."></textarea></div>
+          <div class="form-group"><label class="form-label">Preferred Date</label><input class="form-input" id="cr-date" type="date"/></div>
+          <p id="cr-error" style="color:var(--err);font-size:13px;margin-bottom:12px;display:none;"></p>
+          <button class="btn btn-p btn-lg" onclick="submitCreateRequest()">Submit Request</button>
+        </div>
+      </div>
 
-<!-- ═══ REPORTS ═══ -->
-<div id="page-reports" class="page pad-page">
-  <div class="page-hdr"><div><div class="page-title">Service <span>Reports</span></div><div class="page-sub" id="reports-count">0 completed tickets</div></div><button class="btn btn-p btn-sm" onclick="showToast('Exporting PDF...')">📥 PDF</button></div>
-  <div class="sec-label">Completed Tickets</div>
-  <div id="reports-list" style="padding:0 14px 14px;display:flex;flex-direction:column;gap:8px;"></div>
-</div>
+      <!-- ═══════════ SCHEDULE VIEW (Requester read-only) ═══════════ -->
+      <div id="page-schedule" class="page pad-page">
+        <div class="page-hdr">
+          <div><div class="page-title">Schedule <span>View</span></div><div class="page-sub">Read-only · Assigned visits calendar</div></div>
+        </div>
+        <div style="background:rgba(0,90,169,.06);border:1px solid rgba(0,90,169,.2);border-radius:var(--r);padding:12px 14px;margin:14px;display:flex;align-items:center;gap:8px;font-size:13px;">
+          👁️ <span><strong>View only.</strong> You can see the service schedule but cannot assign or reschedule jobs.</span>
+        </div>
+        <div class="card" style="margin:0 14px;">
+          <div class="card-hdr"><div class="card-title">April 2026 — Service Calendar</div></div>
+          <div class="card-body" style="padding:0;overflow:auto;">
+            <div class="schedule-grid">
+              <div class="sch-dow">Sun</div><div class="sch-dow">Mon</div><div class="sch-dow">Tue</div><div class="sch-dow">Wed</div><div class="sch-dow">Thu</div><div class="sch-dow">Fri</div><div class="sch-dow">Sat</div>
+            </div>
+            <div id="schedule-cal-body" class="schedule-grid"></div>
+          </div>
+        </div>
+        <div class="sec-label" style="margin-top:14px;">This Week's Visits</div>
+        <div id="schedule-week-list" style="padding:0 14px 14px;display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
 
-</main>
-</div><!-- /app-body -->
+      <!-- ═══════════ WORKLOAD VIEW (Requester read-only) ═══════════ -->
+      <div id="page-workload" class="page pad-page">
+        <div class="page-hdr">
+          <div><div class="page-title">Technician <span>Workload</span></div><div class="page-sub">Read-only slot availability</div></div>
+        </div>
+        <div style="background:rgba(0,90,169,.06);border:1px solid rgba(0,90,169,.2);border-radius:var(--r);padding:12px 14px;margin:14px;display:flex;align-items:center;gap:8px;font-size:13px;">
+          👁️ <span><strong>Read-only.</strong> Workload visible. Assignment is restricted to the Technical Manager.</span>
+        </div>
+        <div class="card" style="margin:0 14px 14px;">
+          <div class="card-hdr"><div class="card-title">Current Workload</div></div>
+          <div class="card-body" style="padding:14px;" id="workload-bars"></div>
+        </div>
+      </div>
 
-<!-- BOTTOM NAV -->
-<nav class="bottom-nav">
-  <button class="bnav-item active" id="bn-dashboard" onclick="goPageBnav('dashboard')"><span class="bnav-icon">📊</span><span class="bnav-label" style="color:var(--p)">Dashboard</span></button>
-  <button class="bnav-item" id="bn-tickets" onclick="goPageBnav('tickets')"><span class="bnav-icon">🎫</span><span class="bnav-label">Tickets</span></button>
-  <button class="bnav-item" id="bn-techapp" onclick="goPageBnav('techapp')"><span class="bnav-icon">📱</span><span class="bnav-label">Technician</span></button>
-  <button class="bnav-item" id="bn-inventory" onclick="goPageBnav('inventory')"><span class="bnav-icon">📦</span><span class="bnav-label">Inventory</span></button>
-  <button class="bnav-item" id="bn-more" onclick="toggleMenu()"><span class="bnav-icon">☰</span><span class="bnav-label">More</span></button>
-</nav>
+      <!-- ═══════════ ALL TICKETS (Manager / Admin) ═══════════ -->
+      <div id="page-tickets" class="page pad-page">
+        <div class="page-hdr">
+          <div><div class="page-title">Service <span>Tickets</span></div><div class="page-sub" id="ticket-count-label">0 tickets</div></div>
+          <div class="row gap-sm">
+            <button class="btn btn-outline btn-sm" id="view-toggle" onclick="toggleView()">🗂 Kanban</button>
+            <button class="btn btn-p btn-sm" onclick="openNewTicket()">+ New</button>
+          </div>
+        </div>
+        <div class="search-bar"><input class="search-input" placeholder="🔍 Search tickets..." oninput="handleSearch(this.value)"/></div>
+        <div class="filters" id="filter-bar">
+          <div class="filter-chip active" data-filter="all" onclick="setFilter('all',this)">All</div>
+          <div class="filter-chip" data-filter="new" onclick="setFilter('new',this)">🆕 New</div>
+          <div class="filter-chip" data-filter="in-progress" onclick="setFilter('in-progress',this)">⚙️ In Progress</div>
+          <div class="filter-chip" data-filter="assigned" onclick="setFilter('assigned',this)">👷 Assigned</div>
+          <div class="filter-chip" data-filter="completed" onclick="setFilter('completed',this)">✅ Done</div>
+          <div class="filter-chip" data-filter="on-hold" onclick="setFilter('on-hold',this)">⏸ On Hold</div>
+          <div class="filter-chip" data-filter="maintenance" onclick="setFilter('maintenance',this)">🔧 Maint.</div>
+          <div class="filter-chip" data-filter="installation" onclick="setFilter('installation',this)">🏗️ Install</div>
+        </div>
+        <div id="tkt-list-view"><div class="ticket-list" id="ticket-list-container"></div></div>
+        <div id="tkt-kanban-view" style="display:none;"><div class="kanban-scroll"><div class="kanban-wrap" id="kanban-container"></div></div></div>
+      </div>
+
+      <!-- ═══════════ WORKFLOW ═══════════ -->
+      <div id="page-workflow" class="page pad-page">
+        <div class="page-hdr"><div><div class="page-title">Workflow <span>Automation</span></div><div class="page-sub">4 types · Auto-stage transitions</div></div></div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
+          <div class="card"><div class="card-hdr"><div class="row gap-sm"><div style="width:34px;height:34px;background:#e0f2fe;border-radius:var(--rx);display:flex;align-items:center;justify-content:center;">🔧</div><div><div class="card-title">Maintenance</div><div style="font-size:11px;color:var(--muted)">7 stages · Avg 3.2 days</div></div></div><span class="badge b-maint">Active</span></div><div class="card-body" style="padding:14px;"><div class="wf-scroll"><div class="wf-stages"><div class="wf-node done">✓ New</div><div class="wf-arrow"></div><div class="wf-node done">✓ Validate</div><div class="wf-arrow"></div><div class="wf-node done">✓ Plan</div><div class="wf-arrow"></div><div class="wf-node active">→ Assigned</div><div class="wf-arrow" style="background:var(--p)"></div><div class="wf-node pending">In Progress</div><div class="wf-arrow"></div><div class="wf-node pending">Completed</div><div class="wf-arrow"></div><div class="wf-node pending">Closed</div></div></div></div></div>
+          <div class="card"><div class="card-hdr"><div class="row gap-sm"><div style="width:34px;height:34px;background:var(--ok-bg);border-radius:var(--rx);display:flex;align-items:center;justify-content:center;">🏗️</div><div><div class="card-title">Installation</div><div style="font-size:11px;color:var(--muted)">7 stages</div></div></div><span class="badge b-install">Active</span></div><div class="card-body" style="padding:14px;"><div class="wf-scroll"><div class="wf-stages"><div class="wf-node done">✓ New</div><div class="wf-arrow"></div><div class="wf-node done">✓ Validate</div><div class="wf-arrow"></div><div class="wf-node active">→ Schedule</div><div class="wf-arrow" style="background:var(--p)"></div><div class="wf-node pending">On Site</div><div class="wf-arrow"></div><div class="wf-node pending">Installed</div><div class="wf-arrow"></div><div class="wf-node pending">Handover</div><div class="wf-arrow"></div><div class="wf-node pending">Closed</div></div></div></div></div>
+          <div class="card"><div class="card-hdr"><div class="row gap-sm"><div style="width:34px;height:34px;background:#fef3c7;border-radius:var(--rx);display:flex;align-items:center;justify-content:center;">📦</div><div><div class="card-title">Spare Parts</div><div style="font-size:11px;color:var(--muted)">7 stages</div></div></div><span class="badge b-parts">Active</span></div><div class="card-body" style="padding:14px;"><div class="wf-scroll"><div class="wf-stages"><div class="wf-node done">✓ New</div><div class="wf-arrow"></div><div class="wf-node done">✓ Tech Review</div><div class="wf-arrow"></div><div class="wf-node done">✓ Stock Check</div><div class="wf-arrow"></div><div class="wf-node active">→ Quotation</div><div class="wf-arrow" style="background:var(--p)"></div><div class="wf-node pending">Approval</div><div class="wf-arrow"></div><div class="wf-node pending">Delivery</div><div class="wf-arrow"></div><div class="wf-node pending">Closed</div></div></div></div></div>
+          <div class="card"><div class="card-hdr"><div class="row gap-sm"><div style="width:34px;height:34px;background:rgba(0,90,169,.1);border-radius:var(--rx);display:flex;align-items:center;justify-content:center;">📄</div><div><div class="card-title">AMC / Renewal</div><div style="font-size:11px;color:var(--muted)">6 stages</div></div></div><span class="badge b-amc">Active</span></div><div class="card-body" style="padding:14px;"><div class="wf-scroll"><div class="wf-stages"><div class="wf-node done">✓ New</div><div class="wf-arrow"></div><div class="wf-node done">✓ Validate</div><div class="wf-arrow"></div><div class="wf-node done">✓ Approval</div><div class="wf-arrow"></div><div class="wf-node done">✓ Activated</div><div class="wf-arrow"></div><div class="wf-node active">→ PM Scheduled</div><div class="wf-arrow" style="background:var(--p)"></div><div class="wf-node pending">Renewal Alert</div></div></div></div></div>
+        </div>
+      </div>
+
+      <!-- ═══════════ MY JOBS (Technician) ═══════════ -->
+      <div id="page-my-jobs" class="page pad-page">
+        <div class="page-hdr">
+          <div><div class="page-title">My <span>Jobs</span></div><div class="page-sub" id="my-jobs-sub">Assigned to you</div></div>
+          <span class="badge b-prog" id="my-jobs-count">0 active</span>
+        </div>
+        <div class="filters">
+          <div class="filter-chip active" onclick="setJobFilter('all',this)">All</div>
+          <div class="filter-chip" onclick="setJobFilter('assigned',this)">📋 Assigned</div>
+          <div class="filter-chip" onclick="setJobFilter('in-progress',this)">⚙️ Active</div>
+          <div class="filter-chip" onclick="setJobFilter('completed',this)">✅ Done</div>
+        </div>
+        <div id="my-jobs-list" style="padding:14px;display:flex;flex-direction:column;gap:10px;"></div>
+      </div>
+
+      <!-- ═══════════ ACTIVE VISIT (Technician) ═══════════ -->
+      <div id="page-active-visit" class="page pad-page">
+        <div class="page-hdr">
+          <div><div class="page-title">Active <span>Visit</span></div><div class="page-sub" id="av-sub">Job actions checklist</div></div>
+        </div>
+        <div id="active-visit-banner" style="background:linear-gradient(135deg,var(--p),var(--ps));padding:16px;color:#fff;margin:14px;border-radius:var(--r);">
+          <div style="font-family:'JetBrains Mono';font-size:12px;opacity:.7;margin-bottom:4px" id="av-id">No active job</div>
+          <div style="font-size:16px;font-weight:800;margin-bottom:6px" id="av-title">Select a job from My Jobs</div>
+          <div style="font-size:12px;opacity:.8" id="av-loc">Tap a job card and tap Start Visit</div>
+        </div>
+        <div class="sec-label">Checklist</div>
+        <div class="action-row done" id="act-checkin" onclick="techAction('checkin')"><div class="action-icon" style="background:var(--ok-bg)">📍</div><div class="action-info"><div class="action-title" style="color:var(--ok)">GPS Check-In ✓</div><div class="action-sub" id="act-checkin-sub">Checked in 09:32 AM</div></div><span id="act-checkin-chev">✅</span></div>
+        <div class="action-row" id="act-before" onclick="techAction('before')"><div class="action-icon" style="background:#e0f2fe">📸</div><div class="action-info"><div class="action-title">Before Photos</div><div class="action-sub" id="act-before-sub">Tap to capture</div></div><span id="act-before-chev">›</span></div>
+        <div class="action-row" id="act-parts" onclick="techAction('parts')"><div class="action-icon" style="background:#fef3c7">🔩</div><div class="action-info"><div class="action-title">Spare Parts Used</div><div class="action-sub" id="act-parts-sub">Tap to log</div></div><span id="act-parts-chev">›</span></div>
+        <div class="action-row" id="act-notes" onclick="techAction('notes')"><div class="action-icon" style="background:#f3e8ff">📝</div><div class="action-info"><div class="action-title">Work Notes</div><div class="action-sub" id="act-notes-sub">Tap to add</div></div><span id="act-notes-chev">›</span></div>
+        <div class="action-row" id="act-after" onclick="techAction('after')"><div class="action-icon" style="background:#dcfce7">📷</div><div class="action-info"><div class="action-title">After Photos</div><div class="action-sub" id="act-after-sub">Tap to capture</div></div><span id="act-after-chev">›</span></div>
+        <div class="action-row" id="act-sig" onclick="techAction('sig')"><div class="action-icon" style="background:#fef3c7">✍️</div><div class="action-info"><div class="action-title">Customer Signature</div><div class="action-sub" id="act-sig-sub">Tap to collect</div></div><span id="act-sig-chev">›</span></div>
+        <div style="height:80px;"></div>
+        <div class="sticky-actions">
+          <button class="btn btn-outline" style="min-height:52px;flex:1;border-radius:var(--r);" onclick="showToast('Opening WhatsApp...')">💬 WhatsApp</button>
+          <button class="btn btn-p" style="min-height:52px;flex:2;border-radius:var(--r);" onclick="closeTechVisit()">✅ Close Visit</button>
+        </div>
+      </div>
+
+      <!-- ═══════════ INVENTORY (Manager + Admin) ═══════════ -->
+      <div id="page-inventory" class="page pad-page">
+        <div class="page-hdr"><div><div class="page-title">Inventory <span>& Parts</span></div><div class="page-sub">156 SKUs · 3 warehouses</div></div><button class="btn btn-p btn-sm" onclick="showToast('Add item')">+ Add</button></div>
+        <div style="background:var(--warn-bg);border-bottom:2px solid #fcd34d;padding:10px 14px;font-size:13px;display:flex;align-items:center;gap:8px;">⚠️ <span><strong>9 items below reorder level.</strong></span><button class="btn btn-p btn-xs" style="margin-left:auto;" onclick="showToast('PO created!')">Create PO</button></div>
+        <div class="sec-label">Stock Items</div>
+        <div class="inv-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px;"><div><div style="font-family:'JetBrains Mono';font-size:12px;color:var(--p);font-weight:700">SPC-0041</div><div style="font-size:14px;font-weight:700">Treadmill Belt — Life Fitness T5</div></div><button class="btn btn-danger btn-xs" onclick="showToast('Reorder created')">Reorder</button></div><div style="display:flex;gap:6px;margin-bottom:6px;"><span class="badge b-maint">Cardio</span><span class="pill" style="background:var(--err-bg);color:var(--err)">Critical</span></div><div class="stock-bar-wrap"><div class="stock-fill" style="width:20%;background:var(--err)"></div></div><div style="display:flex;gap:12px;font-size:12px;color:var(--muted)"><span>Qty: <strong style="color:var(--err)">2</strong></span><span>Reorder: 10</span><span>East WH</span><span>7d lead</span></div></div>
+        <div class="inv-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px;"><div><div style="font-family:'JetBrains Mono';font-size:12px;color:var(--p);font-weight:700">SPC-0038</div><div style="font-size:14px;font-weight:700">Console Board — Precor EFX 885</div></div><button class="btn btn-danger btn-xs" onclick="showToast('Urgent PO sent')">Urgent</button></div><div style="display:flex;gap:6px;margin-bottom:6px;"><span class="badge" style="background:#ede9fe;color:#5b21b6">Electronics</span><span class="pill" style="background:var(--err-bg);color:var(--err)">Critical</span></div><div class="stock-bar-wrap"><div class="stock-fill" style="width:10%;background:var(--err)"></div></div><div style="display:flex;gap:12px;font-size:12px;color:var(--muted)"><span>Qty: <strong style="color:var(--err)">1</strong></span><span>Reorder: 5</span><span>Central WH</span></div></div>
+      </div>
+
+      <!-- ═══════════ AMC / PM ═══════════ -->
+      <div id="page-amc" class="page pad-page">
+        <div class="page-hdr"><div><div class="page-title">AMC & <span>PM Scheduler</span></div><div class="page-sub">34 active · 5 PM due this week</div></div><button class="btn btn-p btn-sm" id="amc-new-btn" onclick="showToast('New AMC form')">+ New AMC</button></div>
+        <div class="kpi-grid mt-sm" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:12px;">
+          <div class="kpi-card c-blue" style="padding:10px;"><div class="kpi-value" style="font-size:22px;">34</div><div class="kpi-label">Active</div></div>
+          <div class="kpi-card c-orange" style="padding:10px;"><div class="kpi-value" style="font-size:22px;">6</div><div class="kpi-label">Renewal</div></div>
+          <div class="kpi-card c-red" style="padding:10px;"><div class="kpi-value" style="font-size:22px;">2</div><div class="kpi-label">Expired</div></div>
+          <div class="kpi-card c-green" style="padding:10px;"><div class="kpi-value" style="font-size:22px;">128</div><div class="kpi-label">PM Done</div></div>
+        </div>
+        <div class="sec-label">Active Contracts</div>
+        <div class="amc-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;"><div><div style="font-size:15px;font-weight:700">Delta Downtown — Full Gym AMC</div><div style="font-size:12px;color:var(--muted);margin-top:2px">#AMC-2025-001 · Monthly PM · East</div><div style="display:flex;gap:6px;margin-top:6px;"><span class="badge b-done" style="font-size:10px">4 PM done</span><span class="pill pill-east">East</span></div></div><button class="btn btn-outline btn-xs" id="amc-manage-btn" onclick="showToast('AMC management panel')">Manage</button></div><div style="margin-top:10px;"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px;"><span>Progress</span><span>4/12</span></div><div class="amc-prog-track"><div class="amc-prog-fill" style="width:33%;background:var(--p)"></div></div></div></div>
+        <div class="amc-card warn"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;"><div><div style="font-size:15px;font-weight:700">Delta Westside — Cardio AMC ⚠️</div><div style="font-size:12px;color:var(--muted);margin-top:2px">#AMC-2024-019 · Expires in 28 days · Central</div><div style="display:flex;gap:6px;margin-top:6px;"><span class="badge" style="background:var(--warn-bg);color:var(--warn);font-size:10px">Renewal Alert</span></div></div><button class="btn btn-p btn-xs" id="amc-renew-btn" onclick="showToast('AMC renewal initiated!')">Renew</button></div><div style="margin-top:10px;"><div class="amc-prog-track"><div class="amc-prog-fill" style="width:90%;background:var(--warn)"></div></div></div></div>
+      </div>
+
+      <!-- ═══════════ REPORTS ═══════════ -->
+      <div id="page-reports" class="page pad-page">
+        <div class="page-hdr"><div><div class="page-title">Service <span>Reports</span></div><div class="page-sub" id="reports-count">0 completed</div></div><button class="btn btn-p btn-sm" onclick="showToast('Exporting PDF...')">📥 Export</button></div>
+        <div class="sec-label">Completed Tickets</div>
+        <div id="reports-list" style="padding:0 14px 14px;display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
+      <!-- ═══════════ ADMIN PANEL ═══════════ -->
+      <div id="page-admin" class="page pad-page">
+        <div class="page-hdr"><div><div class="page-title">Admin <span>Panel</span></div><div class="page-sub">Full platform control</div></div></div>
+        <div class="sec-label">User Accounts</div>
+        <div class="card" style="margin:0 14px 14px;overflow:hidden;">
+          <div id="admin-user-list"></div>
+        </div>
+        <div class="sec-label">Platform Stats</div>
+        <div class="kpi-grid" style="padding:0 14px 14px;">
+          <div class="kpi-card c-blue" style="padding:12px;"><div class="kpi-value" id="admin-total">0</div><div class="kpi-label">Total Tickets</div></div>
+          <div class="kpi-card c-green" style="padding:12px;"><div class="kpi-value" id="admin-done">0</div><div class="kpi-label">Completed</div></div>
+          <div class="kpi-card c-orange" style="padding:12px;"><div class="kpi-value" id="admin-open">0</div><div class="kpi-label">Open</div></div>
+          <div class="kpi-card c-teal" style="padding:12px;"><div class="kpi-value">5</div><div class="kpi-label">Users</div></div>
+        </div>
+        <div class="sec-label">Danger Zone</div>
+        <div style="padding:0 14px 14px;display:flex;flex-direction:column;gap:8px;">
+          <button class="btn btn-outline" style="justify-content:flex-start;" onclick="clearAllData()">🗑️ Reset All Demo Data</button>
+          <button class="btn btn-outline" style="justify-content:flex-start;" onclick="showToast('Audit log exported')">📋 Export Audit Log</button>
+          <button class="btn btn-outline" style="justify-content:flex-start;" onclick="showToast('Role permissions editor coming soon')">⚙️ Edit Role Permissions</button>
+        </div>
+      </div>
+
+    </main><!-- /main-content -->
+  </div><!-- /app-body -->
+
+  <!-- BOTTOM NAV -->
+  <nav class="bottom-nav" id="bottom-nav"></nav>
+</div><!-- /app-shell -->
 
 <!-- NEW TICKET MODAL -->
 <div class="modal-overlay" id="new-ticket-modal" onclick="handleModalBg(event,'new-ticket-modal')">
@@ -612,60 +715,18 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
         <div class="type-btn" data-type="spare-parts" onclick="selectType(this)">📦<br>Spare Parts</div>
         <div class="type-btn" data-type="amc" onclick="selectType(this)">📄<br>AMC</div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Customer Name <span class="req">*</span></label>
-        <input class="form-input" id="f-customer" placeholder="Full name"/>
-      </div>
+      <div class="form-group"><label class="form-label">Customer Name <span class="req">*</span></label><input class="form-input" id="f-customer" placeholder="Full name"/></div>
       <div class="form-grid-2">
-        <div class="form-group">
-          <label class="form-label">Team / Department <span class="req">*</span></label>
-          <select class="form-select" id="f-branch">
-            <!-- Options populated dynamically from teamOptions array in JS -->
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Region</label>
-          <select class="form-select" id="f-region">
-            <option value="east">East</option>
-            <option value="central">Central</option>
-            <option value="west">West</option>
-          </select>
-        </div>
+        <div class="form-group"><label class="form-label">Team / Department <span class="req">*</span></label><select class="form-select" id="f-branch"></select></div>
+        <div class="form-group"><label class="form-label">Region</label><select class="form-select" id="f-region"><option value="east">East</option><option value="central">Central</option><option value="west">West</option></select></div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Equipment</label>
-        <input class="form-input" id="f-equipment" placeholder="e.g. Treadmill — Life Fitness T5"/>
-      </div>
+      <div class="form-group"><label class="form-label">Equipment</label><input class="form-input" id="f-equipment" placeholder="e.g. Treadmill — Life Fitness T5"/></div>
       <div class="form-grid-2">
-        <div class="form-group">
-          <label class="form-label">Priority</label>
-          <select class="form-select" id="f-priority">
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Assign To</label>
-          <select class="form-select" id="f-tech">
-            <option value="Auto-assign">Auto-assign</option>
-            <option value="Marcus Reid">Marcus Reid</option>
-            <option value="Sarah Kim">Sarah Kim</option>
-            <option value="Jordan Blake">Jordan Blake</option>
-            <option value="Priya Nair">Priya Nair</option>
-            <option value="Chris Okafor">Chris Okafor</option>
-            <option value="Taylor Wong">Taylor Wong</option>
-          </select>
-        </div>
+        <div class="form-group"><label class="form-label">Priority</label><select class="form-select" id="f-priority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+        <div class="form-group" id="f-tech-group"><label class="form-label">Assign To</label><select class="form-select" id="f-tech"><option value="Auto-assign">Auto-assign</option><option value="Marcus Reid">Marcus Reid</option><option value="Sarah Kim">Sarah Kim</option><option value="Jordan Blake">Jordan Blake</option><option value="Priya Nair">Priya Nair</option><option value="Chris Okafor">Chris Okafor</option></select></div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Description</label>
-        <textarea class="form-textarea" id="f-description" placeholder="Describe the issue or request..."></textarea>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Scheduled Date</label>
-        <input class="form-input" id="f-date" type="date"/>
-      </div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="f-description" placeholder="Describe the issue..."></textarea></div>
+      <div class="form-group"><label class="form-label">Scheduled Date</label><input class="form-input" id="f-date" type="date"/></div>
       <p id="form-error" style="color:var(--err);font-size:13px;margin-bottom:10px;display:none;"></p>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-outline btn-lg" style="flex:1" onclick="closeModal('new-ticket-modal')">Cancel</button>
@@ -691,132 +752,12 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 </div>
 
 <script>
-// ══════════════════════════════════════════════
-//  STATE ENGINE — Delta Fitness Service Hub v3
-// ══════════════════════════════════════════════
+'use strict';
+// ══════════════════════════════════════════════════════════════
+//   DELTA FITNESS SERVICE HUB v4 — ROLE-BASED ACCESS SYSTEM
+// ══════════════════════════════════════════════════════════════
 
-const STORAGE_KEY = 'df_hub_tickets_v3';
-const COUNTER_KEY = 'df_hub_counter_v3';
-
-// ── SEED DATA ──
-const SEED_TICKETS = [
-  { id:'TKT-0047', type:'maintenance', status:'in-progress', priority:'high', customer:'Sarah Al-Rashid', branch:'Operation Team', region:'east', equipment:'Treadmill — Life Fitness T5', description:'Belt worn causing slippage. Needs replacement.', technician:'Marcus Reid', date:'2026-04-15', createdAt: Date.now()-3600000 },
-  { id:'TKT-0046', type:'installation', status:'assigned', priority:'normal', customer:'Khalid Ibrahim', branch:'Consumer Team', region:'central', equipment:'Squat Rack × 4 — Hammer Strength', description:'New equipment installation in strength zone.', technician:'Sarah Kim', date:'2026-04-16', createdAt: Date.now()-7200000 },
-  { id:'TKT-0045', type:'spare-parts', status:'on-hold', priority:'urgent', customer:'Fatima Hassan', branch:'Operation Team', region:'east', equipment:'Elliptical — Precor EFX 885', description:'Console board failure. Waiting on parts.', technician:'Jordan Blake', date:'2026-04-14', createdAt: Date.now()-86400000 },
-  { id:'TKT-0044', type:'amc', status:'new', priority:'normal', customer:'Omar Al-Sayed', branch:'Sales Team', region:'west', equipment:'Full Gym — AMC Renewal', description:'Annual maintenance contract renewal.', technician:'Priya Nair', date:'2026-04-18', createdAt: Date.now()-172800000 },
-  { id:'TKT-0043', type:'maintenance', status:'completed', priority:'normal', customer:'Nora Abdullah', branch:'Consumer Team', region:'central', equipment:'Cable Machine — Cybex VR3', description:'Quarterly PM service completed.', technician:'Chris Okafor', date:'2026-04-12', createdAt: Date.now()-259200000 },
-  { id:'TKT-0041', type:'installation', status:'on-hold', priority:'urgent', customer:'Ahmed Fouad', branch:'Operation Team', region:'east', equipment:'Treadmill Bank × 8 — NordicTrack', description:'SLA breached — awaiting site prep.', technician:'Taylor Wong', date:'2026-04-10', createdAt: Date.now()-345600000 },
-  { id:'TKT-0039', type:'maintenance', status:'in-progress', priority:'high', customer:'Layla Mustafa', branch:'Consumer Team', region:'east', equipment:'Rowing Machines × 6 — Concept2', description:'Bearing replacement on 6 rowing machines.', technician:'Marcus Reid', date:'2026-04-15', createdAt: Date.now()-432000000 },
-  { id:'TKT-0036', type:'amc', status:'completed', priority:'normal', customer:'Hassan Khalil', branch:'Sales Team', region:'east', equipment:'Cardio Zone — Full AMC', description:'AMC activation completed.', technician:'Sarah Kim', date:'2026-04-08', createdAt: Date.now()-518400000 },
-];
-
-// ── LOAD / SAVE ──
-function loadTickets() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch(e) {}
-  const seed = [...SEED_TICKETS];
-  saveTickets(seed);
-  return seed;
-}
-function saveTickets(arr) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-}
-function getCounter() {
-  return parseInt(localStorage.getItem(COUNTER_KEY) || '47');
-}
-function setCounter(n) {
-  localStorage.setItem(COUNTER_KEY, String(n));
-}
-function nextTicketId() {
-  const n = getCounter() + 1;
-  setCounter(n);
-  return 'TKT-' + String(n).padStart(4,'0');
-}
-
-// ── GLOBAL STATE ──
-let tickets = loadTickets();
-let currentFilter = 'all';
-let currentSearch = '';
-let kanbanMode = false;
-let currentPage = 'dashboard';
-let techActions = { checkin:true, before:false, parts:false, notes:false, after:false, sig:false };
-
-// ── DERIVED STATE ──
-function getStats() {
-  return {
-    total: tickets.length,
-    open: tickets.filter(t => !['completed','closed'].includes(t.status)).length,
-    assigned: tickets.filter(t => t.status === 'assigned').length,
-    inProgress: tickets.filter(t => t.status === 'in-progress').length,
-    pendingParts: tickets.filter(t => t.status === 'on-hold' && t.type === 'spare-parts').length,
-    completed: tickets.filter(t => t.status === 'completed').length,
-    closed: tickets.filter(t => t.status === 'closed').length,
-    newCount: tickets.filter(t => t.status === 'new').length,
-    onHold: tickets.filter(t => t.status === 'on-hold').length,
-    slaCompliance: tickets.length ? Math.round((tickets.filter(t=>['completed','closed'].includes(t.status)).length / tickets.length) * 100) : 100,
-  };
-}
-function getFilteredTickets() {
-  let list = [...tickets].sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-  if (currentSearch) {
-    const q = currentSearch.toLowerCase();
-    list = list.filter(t =>
-      t.id.toLowerCase().includes(q) ||
-      t.customer.toLowerCase().includes(q) ||
-      t.branch.toLowerCase().includes(q) ||
-      t.equipment.toLowerCase().includes(q) ||
-      (t.description||'').toLowerCase().includes(q)
-    );
-  }
-  if (currentFilter === 'all') return list;
-  if (['new','assigned','in-progress','completed','on-hold','closed'].includes(currentFilter))
-    return list.filter(t => t.status === currentFilter);
-  if (['maintenance','installation','spare-parts','amc'].includes(currentFilter))
-    return list.filter(t => t.type === currentFilter);
-  return list;
-}
-
-// ── RENDER ENGINE ──
-function renderAll() {
-  saveTickets(tickets);
-  updateKPIs();
-  renderTicketList();
-  renderKanban();
-  renderDashboardRecent();
-  renderDonut();
-  renderTypeChart();
-  renderReports();
-  updateMenuBadge();
-  updateSLABanner();
-  updateTechApp();
-}
-
-function updateKPIs() {
-  const s = getStats();
-  animateNum('kpi-open', s.open);
-  animateNum('kpi-assigned', s.assigned + s.inProgress);
-  animateNum('kpi-pending', s.pendingParts + s.onHold);
-  animateNum('kpi-completed', s.completed);
-  animateNum('kpi-sla', s.slaCompliance, '%');
-  animateNum('kpi-total', s.total);
-}
-
-function animateNum(id, val, suffix='') {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const current = parseInt(el.textContent) || 0;
-  if (current === val) return;
-  el.style.transform = 'scale(1.15)';
-  el.style.color = 'var(--p)';
-  setTimeout(() => { el.textContent = val + suffix; }, 100);
-  setTimeout(() => { el.style.transform = ''; el.style.color = ''; }, 300);
-}
-
-// ── TEAM / DEPARTMENT OPTIONS ──
-// To add a new team, simply append its name to this array.
-// No other code changes needed — the dropdown re-renders automatically.
+// ── TEAM OPTIONS (extend here) ──
 const teamOptions = [
   "Sales Team",
   "Consumer Team",
@@ -824,528 +765,896 @@ const teamOptions = [
   // Add future teams here
 ];
 
-// Populate the Team / Department dropdown from teamOptions
-function populateTeamDropdown() {
-  const sel = document.getElementById('f-branch');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">Select team...</option>' +
-    teamOptions.map(t => `<option value="${t}">${t}</option>`).join('');
-}
+// ── DEMO USERS ──
+const demoUsers = [
+  { id:'u1', name:'Ahmed Consumer',    email:'requester.consumer@demo.com',    role:'requester_consumer',   avatar:'AC', color:'#1d4ed8', roleLabel:'Requester — Consumer Sales' },
+  { id:'u2', name:'Sara Commercial',   email:'requester.commercial@demo.com',  role:'requester_commercial', avatar:'SC', color:'#4338ca', roleLabel:'Requester — Commercial Sales' },
+  { id:'u3', name:'Naveed Manager',    email:'techmanager@demo.com',           role:'technical_manager',    avatar:'NM', color:'#d97706', roleLabel:'Technical Manager' },
+  { id:'u4', name:'Marcus Technician', email:'technician@demo.com',            role:'technician',           avatar:'MT', color:'#059669', roleLabel:'Field Technician' },
+  { id:'u5', name:'Admin User',        email:'admin@demo.com',                 role:'admin',                avatar:'AD', color:'#dc2626', roleLabel:'System Administrator' },
+];
 
-const TECH_COLORS = {
-  'Marcus Reid':'#2E75B6','Sarah Kim':'#7c3aed','Jordan Blake':'#0d9488',
-  'Priya Nair':'#dc2626','Chris Okafor':'#2E75B6','Taylor Wong':'#7c3aed',
-  'Auto-assign':'#6b7280'
+// ── ROLE CONFIG ──
+// pages: which pages are accessible; bnav: bottom nav items; canAssign, canChangeStatus, etc.
+const ROLE_CONFIG = {
+  requester_consumer: {
+    label:'Requester (Consumer)', color:'#1d4ed8',
+    pages: ['dashboard','my-requests','create-request','schedule','workload'],
+    bnav: [
+      {id:'dashboard',  icon:'📊', label:'Dashboard'},
+      {id:'my-requests',icon:'🎫', label:'My Requests'},
+      {id:'create-request',icon:'➕',label:'Create'},
+      {id:'schedule',   icon:'📅', label:'Schedule'},
+      {id:'workload',   icon:'👷', label:'Workload'},
+    ],
+    menuSections: [
+      { label:'Main', items:[
+        {page:'dashboard',     icon:'📊', label:'Dashboard'},
+        {page:'my-requests',   icon:'🎫', label:'My Requests'},
+        {page:'create-request',icon:'➕', label:'Create Request'},
+        {page:'schedule',      icon:'📅', label:'Schedule View'},
+        {page:'workload',      icon:'👷', label:'Technician Workload'},
+      ]}
+    ],
+    canAssign: false, canChangeStatus: false, canCloseTicket: false,
+    canManageAMC: false, canEditInventory: false, canViewAllTickets: false,
+    canCreateRequest: true, canSeeAssignBtn: false,
+  },
+  requester_commercial: {
+    label:'Requester (Commercial)', color:'#4338ca',
+    pages: ['dashboard','my-requests','create-request','schedule','workload'],
+    bnav: [
+      {id:'dashboard',  icon:'📊', label:'Dashboard'},
+      {id:'my-requests',icon:'🎫', label:'My Requests'},
+      {id:'create-request',icon:'➕',label:'Create'},
+      {id:'schedule',   icon:'📅', label:'Schedule'},
+      {id:'workload',   icon:'👷', label:'Workload'},
+    ],
+    menuSections: [
+      { label:'Main', items:[
+        {page:'dashboard',     icon:'📊', label:'Dashboard'},
+        {page:'my-requests',   icon:'🎫', label:'My Requests'},
+        {page:'create-request',icon:'➕', label:'Create Request'},
+        {page:'schedule',      icon:'📅', label:'Schedule View'},
+        {page:'workload',      icon:'👷', label:'Technician Workload'},
+      ]}
+    ],
+    canAssign: false, canChangeStatus: false, canCloseTicket: false,
+    canManageAMC: false, canEditInventory: false, canViewAllTickets: false,
+    canCreateRequest: true, canSeeAssignBtn: false,
+  },
+  technical_manager: {
+    label:'Technical Manager', color:'#d97706',
+    pages: ['dashboard','tickets','workflow','schedule','amc','reports'],
+    bnav: [
+      {id:'dashboard', icon:'📊', label:'Dashboard'},
+      {id:'tickets',   icon:'🎫', label:'Tickets'},
+      {id:'workflow',  icon:'⚡', label:'Workflow'},
+      {id:'amc',       icon:'🔄', label:'AMC'},
+      {id:'reports',   icon:'📋', label:'Reports'},
+    ],
+    menuSections: [
+      { label:'Operations', items:[
+        {page:'dashboard', icon:'📊', label:'Dashboard'},
+        {page:'tickets',   icon:'🎫', label:'Service Tickets', badge:'open'},
+        {page:'workflow',  icon:'⚡', label:'Workflow'},
+        {page:'schedule',  icon:'📅', label:'Tech Schedule'},
+        {page:'amc',       icon:'🔄', label:'AMC / PM'},
+        {page:'reports',   icon:'📋', label:'Reports'},
+      ]}
+    ],
+    canAssign: true, canChangeStatus: true, canCloseTicket: true,
+    canManageAMC: true, canEditInventory: false, canViewAllTickets: true,
+    canCreateRequest: true, canSeeAssignBtn: true,
+  },
+  technician: {
+    label:'Field Technician', color:'#059669',
+    pages: ['my-jobs','active-visit'],
+    bnav: [
+      {id:'my-jobs',      icon:'📋', label:'My Jobs'},
+      {id:'active-visit', icon:'⚙️', label:'Active Visit'},
+    ],
+    menuSections: [
+      { label:'Field Work', items:[
+        {page:'my-jobs',      icon:'📋', label:'My Jobs'},
+        {page:'active-visit', icon:'⚙️', label:'Active Visit'},
+      ]}
+    ],
+    canAssign: false, canChangeStatus: true, canCloseTicket: true,
+    canManageAMC: false, canEditInventory: false, canViewAllTickets: false,
+    canCreateRequest: false, canSeeAssignBtn: false,
+  },
+  admin: {
+    label:'Administrator', color:'#dc2626',
+    pages: ['dashboard','tickets','workflow','schedule','inventory','amc','reports','admin'],
+    bnav: [
+      {id:'dashboard', icon:'📊', label:'Dashboard'},
+      {id:'tickets',   icon:'🎫', label:'Tickets'},
+      {id:'inventory', icon:'📦', label:'Inventory'},
+      {id:'admin',     icon:'🔑', label:'Admin'},
+    ],
+    menuSections: [
+      { label:'Main', items:[
+        {page:'dashboard', icon:'📊', label:'Dashboard'},
+        {page:'tickets',   icon:'🎫', label:'Service Tickets', badge:'open'},
+        {page:'workflow',  icon:'⚡', label:'Workflow'},
+        {page:'schedule',  icon:'📅', label:'Tech Schedule'},
+      ]},
+      { label:'Management', items:[
+        {page:'inventory', icon:'📦', label:'Inventory', badge:'low'},
+        {page:'amc',       icon:'🔄', label:'AMC / PM'},
+        {page:'reports',   icon:'📋', label:'Reports'},
+        {page:'admin',     icon:'🔑', label:'Admin Panel'},
+      ]}
+    ],
+    canAssign: true, canChangeStatus: true, canCloseTicket: true,
+    canManageAMC: true, canEditInventory: true, canViewAllTickets: true,
+    canCreateRequest: true, canSeeAssignBtn: true,
+  },
 };
-function techInitials(name) {
-  return name.split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpperCase();
+
+// ── STORAGE ──
+const STORAGE_KEY = 'df_hub_tickets_v4';
+const COUNTER_KEY = 'df_hub_counter_v4';
+const SESSION_KEY = 'df_hub_session_v4';
+
+const SEED_TICKETS = [
+  { id:'TKT-0047', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Sarah Al-Rashid', branch:'Operation Team',  region:'east',    equipment:'Treadmill — Life Fitness T5',     description:'Belt worn causing slippage.',       technician:'Marcus Reid',   date:'2026-04-15', createdBy:'u3', createdAt:Date.now()-3600000 },
+  { id:'TKT-0046', type:'installation', status:'assigned',    priority:'normal', customer:'Khalid Ibrahim',  branch:'Consumer Team',   region:'central', equipment:'Squat Rack × 4 — Hammer Strength',description:'New equipment installation.',       technician:'Sarah Kim',     date:'2026-04-16', createdBy:'u1', createdAt:Date.now()-7200000 },
+  { id:'TKT-0045', type:'spare-parts',  status:'on-hold',     priority:'urgent', customer:'Fatima Hassan',   branch:'Operation Team',  region:'east',    equipment:'Elliptical — Precor EFX 885',     description:'Console board failure.',           technician:'Jordan Blake',  date:'2026-04-14', createdBy:'u2', createdAt:Date.now()-86400000 },
+  { id:'TKT-0044', type:'amc',          status:'new',         priority:'normal', customer:'Omar Al-Sayed',   branch:'Sales Team',      region:'west',    equipment:'Full Gym — AMC Renewal',          description:'Annual contract renewal.',         technician:'Priya Nair',    date:'2026-04-18', createdBy:'u3', createdAt:Date.now()-172800000 },
+  { id:'TKT-0043', type:'maintenance',  status:'completed',   priority:'normal', customer:'Nora Abdullah',   branch:'Consumer Team',   region:'central', equipment:'Cable Machine — Cybex VR3',       description:'Quarterly PM service completed.',  technician:'Chris Okafor',  date:'2026-04-12', createdBy:'u1', createdAt:Date.now()-259200000 },
+  { id:'TKT-0041', type:'installation', status:'on-hold',     priority:'urgent', customer:'Ahmed Fouad',     branch:'Operation Team',  region:'east',    equipment:'Treadmill Bank × 8 — NordicTrack',description:'SLA breached — awaiting site prep.',technician:'Marcus Reid',   date:'2026-04-10', createdBy:'u3', createdAt:Date.now()-345600000 },
+  { id:'TKT-0039', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Layla Mustafa',   branch:'Consumer Team',   region:'east',    equipment:'Rowing Machines × 6 — Concept2',  description:'Bearing replacement needed.',      technician:'Marcus Reid',   date:'2026-04-15', createdBy:'u2', createdAt:Date.now()-432000000 },
+  { id:'TKT-0036', type:'amc',          status:'completed',   priority:'normal', customer:'Hassan Khalil',   branch:'Sales Team',      region:'east',    equipment:'Cardio Zone — Full AMC',          description:'AMC activation completed.',        technician:'Sarah Kim',     date:'2026-04-08', createdBy:'u1', createdAt:Date.now()-518400000 },
+];
+
+function loadTickets() {
+  try { const r = localStorage.getItem(STORAGE_KEY); if(r) return JSON.parse(r); } catch(e){}
+  const s = JSON.parse(JSON.stringify(SEED_TICKETS));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  return s;
 }
-function statusBadge(status) {
-  const map = {
-    'new':'b-new','assigned':'b-assigned','in-progress':'b-prog',
-    'completed':'b-done','on-hold':'b-hold','closed':'b-closed','spare-parts':'b-parts'
-  };
-  const labels = {
-    'new':'New','assigned':'Assigned','in-progress':'In Progress',
-    'completed':'Completed','on-hold':'On Hold','closed':'Closed'
-  };
-  return `<span class="badge ${map[status]||'b-new'}">${labels[status]||status}</span>`;
+function saveTickets(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+function getCounter() { return parseInt(localStorage.getItem(COUNTER_KEY)||'47'); }
+function setCounter(n) { localStorage.setItem(COUNTER_KEY, String(n)); }
+function nextId() { const n=getCounter()+1; setCounter(n); return 'TKT-'+String(n).padStart(4,'0'); }
+
+// ── APP STATE ──
+let tickets = loadTickets();
+let currentUser = null;
+let currentFilter = 'all';
+let currentSearch = '';
+let kanbanMode = false;
+let myFilter = 'all';
+let jobFilter = 'all';
+let activeTechJobId = null;
+let techCheckState = { checkin:true, before:false, parts:false, notes:false, after:false, sig:false };
+
+// ── HELPER FUNCTIONS ──
+const TECH_COLORS = {'Marcus Reid':'#2E75B6','Sarah Kim':'#7c3aed','Jordan Blake':'#0d9488','Priya Nair':'#dc2626','Chris Okafor':'#2E75B6','Taylor Wong':'#7c3aed','Auto-assign':'#6b7280'};
+function initials(name) { return (name||'?').split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpperCase(); }
+function statusBadge(s) {
+  const m={'new':'b-new','assigned':'b-assigned','in-progress':'b-prog','completed':'b-done','on-hold':'b-hold','closed':'b-closed'};
+  const l={'new':'New','assigned':'Assigned','in-progress':'In Progress','completed':'Completed','on-hold':'On Hold','closed':'Closed'};
+  return `<span class="badge ${m[s]||'b-new'}">${l[s]||s}</span>`;
 }
-function typeBadge(type) {
-  const map = { 'maintenance':'b-maint','installation':'b-install','spare-parts':'b-parts','amc':'b-amc' };
-  const icons = { 'maintenance':'🔧','installation':'🏗️','spare-parts':'📦','amc':'📄' };
-  const labels = { 'maintenance':'Maint.','installation':'Install','spare-parts':'Parts','amc':'AMC' };
-  return `<span class="badge ${map[type]||''}">${icons[type]||''} ${labels[type]||type}</span>`;
+function typeBadge(t) {
+  const m={'maintenance':'b-maint','installation':'b-install','spare-parts':'b-parts','amc':'b-amc'};
+  const i={'maintenance':'🔧','installation':'🏗️','spare-parts':'📦','amc':'📄'};
+  const l={'maintenance':'Maint.','installation':'Install','spare-parts':'Parts','amc':'AMC'};
+  return `<span class="badge ${m[t]||''}">${i[t]||''} ${l[t]||t}</span>`;
 }
 function priorityPill(p) {
-  const map = { normal:'background:var(--ok-bg);color:var(--ok)', high:'background:var(--warn-bg);color:var(--warn)', urgent:'background:var(--err-bg);color:#991b1b' };
-  return `<span class="pill" style="${map[p]||''}">${p.charAt(0).toUpperCase()+p.slice(1)}</span>`;
+  const m={normal:'background:var(--ok-bg);color:var(--ok)',high:'background:var(--warn-bg);color:var(--warn)',urgent:'background:var(--err-bg);color:#991b1b'};
+  return `<span class="pill" style="${m[p]||''}">${(p||'').charAt(0).toUpperCase()+(p||'').slice(1)}</span>`;
 }
-function regionPill(r) {
-  return `<span class="pill pill-${r||'east'}">${(r||'east').charAt(0).toUpperCase()+(r||'east').slice(1)}</span>`;
+function getStats(list) {
+  list = list || tickets;
+  return {
+    total: list.length,
+    open:  list.filter(t=>!['completed','closed'].includes(t.status)).length,
+    assigned: list.filter(t=>t.status==='assigned').length,
+    inProgress: list.filter(t=>t.status==='in-progress').length,
+    newCount: list.filter(t=>t.status==='new').length,
+    onHold: list.filter(t=>t.status==='on-hold').length,
+    completed: list.filter(t=>['completed','closed'].includes(t.status)).length,
+    sla: list.length ? Math.round((list.filter(t=>['completed','closed'].includes(t.status)).length/list.length)*100) : 100,
+  };
+}
+function showToast(msg) {
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function handleModalBg(e,id){if(e.target.id===id)closeModal(id);}
+
+// ══════════════════════════════
+//   LOGIN SYSTEM
+// ══════════════════════════════
+let selectedUserId = null;
+
+function renderLoginScreen() {
+  const sel = document.getElementById('user-selector');
+  const roleTagMap = {
+    requester_consumer:'role-tag-req_c', requester_commercial:'role-tag-req_com',
+    technical_manager:'role-tag-mgr', technician:'role-tag-tech', admin:'role-tag-admin'
+  };
+  sel.innerHTML = demoUsers.map(u => `
+    <div class="user-card" id="uc-${u.id}" onclick="selectUser('${u.id}')">
+      <div class="user-card-avatar" style="background:${u.color}">${u.avatar}</div>
+      <div style="flex:1">
+        <div class="user-card-name">${u.roleLabel}</div>
+        <div class="user-card-email">${u.email}</div>
+      </div>
+    </div>`).join('');
+}
+
+function selectUser(id) {
+  selectedUserId = id;
+  document.querySelectorAll('.user-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('uc-'+id).classList.add('selected');
+  document.getElementById('login-btn').disabled = false;
+}
+
+function doLogin() {
+  if (!selectedUserId) return;
+  const user = demoUsers.find(u=>u.id===selectedUserId);
+  if (!user) return;
+  currentUser = user;
+  localStorage.setItem(SESSION_KEY, JSON.stringify({userId:user.id}));
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app-shell').classList.add('visible');
+  document.body.classList.add('app-active');
+  bootApp();
+}
+
+function doLogout() {
+  localStorage.removeItem(SESSION_KEY);
+  currentUser = null;
+  selectedUserId = null;
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app-shell').classList.remove('visible');
+  document.body.classList.remove('app-active');
+  document.querySelectorAll('.user-card').forEach(c=>c.classList.remove('selected'));
+  document.getElementById('login-btn').disabled = true;
+}
+
+// ══════════════════════════════
+//   APP BOOT PER ROLE
+// ══════════════════════════════
+function bootApp() {
+  const cfg = ROLE_CONFIG[currentUser.role];
+  // Topbar
+  document.getElementById('role-pill').textContent = cfg.label;
+  document.getElementById('menu-avatar').textContent = currentUser.avatar;
+  document.getElementById('menu-avatar').style.background = currentUser.color;
+  document.getElementById('menu-user-name').textContent = currentUser.name;
+  document.getElementById('menu-user-role').textContent = currentUser.roleLabel;
+  // Build menu
+  buildMenu(cfg);
+  // Build bottom nav
+  buildBottomNav(cfg);
+  // Set date
+  document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  // Populate team dropdowns
+  populateTeamDropdown('f-branch');
+  populateTeamDropdown('cr-branch');
+  // Initial page
+  const firstPage = cfg.pages[0];
+  goPage(firstPage);
+  // Hide "New Ticket" button for technicians
+  const newBtn = document.getElementById('dash-new-btn');
+  if (newBtn) newBtn.style.display = cfg.canCreateRequest ? '' : 'none';
+  // Assign-to field: hide for non-managers
+  const techGroup = document.getElementById('f-tech-group');
+  if (techGroup) techGroup.style.display = cfg.canAssign ? '' : 'none';
+  // AMC new button: only for manager/admin
+  const amcNew = document.getElementById('amc-new-btn');
+  if (amcNew) amcNew.style.display = cfg.canManageAMC ? '' : 'none';
+  const amcManage = document.getElementById('amc-manage-btn');
+  if (amcManage) amcManage.style.display = cfg.canManageAMC ? '' : 'none';
+  const amcRenew = document.getElementById('amc-renew-btn');
+  if (amcRenew) amcRenew.style.display = cfg.canManageAMC ? '' : 'none';
+  // Render all
+  renderAll();
+}
+
+function buildMenu(cfg) {
+  const nav = document.getElementById('menu-nav-items');
+  nav.innerHTML = cfg.menuSections.map(section => `
+    <div class="menu-section">
+      <div class="menu-section-label">${section.label}</div>
+      ${section.items.map(item => {
+        let badgeHtml = '';
+        if (item.badge === 'open') {
+          const n = tickets.filter(t=>!['completed','closed'].includes(t.status)).length;
+          badgeHtml = `<span class="menu-badge" id="menu-open-count">${n}</span>`;
+        } else if (item.badge === 'low') {
+          badgeHtml = `<span class="menu-badge orange">9</span>`;
+        }
+        return `<div class="menu-item" data-page="${item.page}" onclick="goPage('${item.page}');closeMenu()"><span class="mi-icon">${item.icon}</span>${item.label}${badgeHtml}</div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+function buildBottomNav(cfg) {
+  const nav = document.getElementById('bottom-nav');
+  const items = cfg.bnav.slice(0, 5);
+  nav.innerHTML = items.map((item,i) => `
+    <button class="bnav-item ${i===0?'active':''}" id="bn-${item.id}" onclick="goPage('${item.id}')">
+      <span class="bnav-icon">${item.icon}</span>
+      <span class="bnav-label">${item.label}</span>
+    </button>`).join('');
+  if (items.length < 5) {
+    nav.innerHTML += `<button class="bnav-item" onclick="toggleMenu()"><span class="bnav-icon">☰</span><span class="bnav-label">More</span></button>`;
+  }
+}
+
+// ══════════════════════════════
+//   NAVIGATION
+// ══════════════════════════════
+function goPage(id) {
+  const cfg = ROLE_CONFIG[currentUser?.role];
+  if (!cfg) return;
+  // Permission check
+  if (!cfg.pages.includes(id)) {
+    showToast('⛔ Access restricted for your role');
+    return;
+  }
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const page = document.getElementById('page-'+id);
+  if (page) page.classList.add('active');
+  // Menu highlight
+  document.querySelectorAll('.menu-item').forEach(m=>m.classList.remove('active'));
+  const menuEl = document.querySelector(`[data-page="${id}"]`);
+  if (menuEl) menuEl.classList.add('active');
+  // Bottom nav highlight
+  document.querySelectorAll('.bnav-item').forEach(b=>b.classList.remove('active'));
+  const bnEl = document.getElementById('bn-'+id);
+  if (bnEl) { bnEl.classList.add('active'); bnEl.querySelector('.bnav-label').style.color='var(--p)'; }
+  // Per-page render
+  if (id==='schedule') renderSchedule();
+  if (id==='workload') renderWorkload();
+  if (id==='my-jobs') renderMyJobs();
+  if (id==='my-requests') renderMyRequests();
+  if (id==='admin') renderAdmin();
+  const mc = document.getElementById('main-content');
+  if(mc) mc.scrollTop=0; else window.scrollTo(0,0);
+  closeMenu();
+}
+function goPageBnav(id){goPage(id);}
+
+// ── MENU ──
+function toggleMenu(){document.getElementById('slide-menu').classList.toggle('open');document.getElementById('menu-overlay').classList.toggle('open');}
+function closeMenu(){document.getElementById('slide-menu').classList.remove('open');document.getElementById('menu-overlay').classList.remove('open');}
+function handleSearch(q){currentSearch=q;renderTicketList();renderKanban();}
+
+// ══════════════════════════════
+//   RENDER ENGINE
+// ══════════════════════════════
+function renderAll() {
+  saveTickets(tickets);
+  renderDashboard();
+  renderTicketList();
+  renderKanban();
+  renderReports();
+  updateMenuBadge();
+  updateSLABanner();
+  if (currentUser?.role==='technician') renderMyJobs();
+  if (['requester_consumer','requester_commercial'].includes(currentUser?.role)) renderMyRequests();
+}
+
+// ── DASHBOARD ──
+function renderDashboard() {
+  const role = currentUser?.role;
+  const cfg = ROLE_CONFIG[role] || {};
+  const isRequester = role?.startsWith('requester');
+  // Title
+  const titleEl = document.getElementById('dash-page-title');
+  if (titleEl) titleEl.innerHTML = isRequester ? 'My <span style="color:var(--p)">Dashboard</span>' : 'Operations <span style="color:var(--p)">Dashboard</span>';
+  // Which tickets to show
+  const myList = isRequester ? tickets.filter(t=>t.createdBy===currentUser.id) : tickets;
+  const s = getStats(myList);
+  const kpiEl = document.getElementById('dash-kpis');
+  if (!kpiEl) return;
+  if (isRequester) {
+    kpiEl.innerHTML = `
+      <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">🎫</div></div><div class="kpi-value">${myList.length}</div><div class="kpi-label">My Requests</div></div>
+      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⚙️</div></div><div class="kpi-value">${s.inProgress}</div><div class="kpi-label">In Progress</div></div>
+      <div class="kpi-card c-green"><div class="kpi-top"><div class="kpi-icon c-green">✅</div></div><div class="kpi-value">${s.completed}</div><div class="kpi-label">Completed</div></div>
+      <div class="kpi-card c-red"><div class="kpi-top"><div class="kpi-icon c-red">⏸</div></div><div class="kpi-value">${s.onHold}</div><div class="kpi-label">On Hold</div></div>`;
+  } else if (role==='technician') {
+    const mine = tickets.filter(t=>t.technician==='Marcus Reid');
+    kpiEl.innerHTML = `
+      <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">📋</div></div><div class="kpi-value">${mine.length}</div><div class="kpi-label">Assigned to Me</div></div>
+      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⚙️</div></div><div class="kpi-value">${mine.filter(t=>t.status==='in-progress').length}</div><div class="kpi-label">Active</div></div>
+      <div class="kpi-card c-green"><div class="kpi-top"><div class="kpi-icon c-green">✅</div></div><div class="kpi-value">${mine.filter(t=>t.status==='completed').length}</div><div class="kpi-label">Completed</div></div>
+      <div class="kpi-card c-teal"><div class="kpi-top"><div class="kpi-icon c-teal">📅</div></div><div class="kpi-value">${mine.filter(t=>t.status==='assigned').length}</div><div class="kpi-label">Upcoming</div></div>`;
+  } else {
+    kpiEl.innerHTML = `
+      <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">🎫</div></div><div class="kpi-value">${s.open}</div><div class="kpi-label">Open Tickets</div></div>
+      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">🔧</div></div><div class="kpi-value">${s.assigned+s.inProgress}</div><div class="kpi-label">Assigned Jobs</div></div>
+      <div class="kpi-card c-red"><div class="kpi-top"><div class="kpi-icon c-red">⏸</div></div><div class="kpi-value">${s.onHold}</div><div class="kpi-label">On Hold</div></div>
+      <div class="kpi-card c-green"><div class="kpi-top"><div class="kpi-icon c-green">✅</div></div><div class="kpi-value">${s.completed}</div><div class="kpi-label">Completed</div></div>
+      <div class="kpi-card c-teal"><div class="kpi-top"><div class="kpi-icon c-teal">⏱️</div></div><div class="kpi-value">${s.sla}%</div><div class="kpi-label">SLA Compliance</div></div>
+      <div class="kpi-card c-purple"><div class="kpi-top"><div class="kpi-icon c-purple">🔢</div></div><div class="kpi-value">${s.total}</div><div class="kpi-label">Total Tickets</div></div>
+      <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">📄</div></div><div class="kpi-value">34</div><div class="kpi-label">AMC Active</div></div>
+      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">📅</div></div><div class="kpi-value">5</div><div class="kpi-label">PM Due Week</div></div>`;
+  }
+  // Charts (hide for technician/requester)
+  const chartWrap = document.getElementById('dash-charts');
+  const chartLabel = document.getElementById('dash-chart-label');
+  if (isRequester || role==='technician') {
+    if(chartWrap) chartWrap.style.display='none';
+    if(chartLabel) chartLabel.style.display='none';
+  } else {
+    if(chartWrap) { chartWrap.style.display=''; renderCharts(myList, chartWrap); }
+    if(chartLabel) chartLabel.style.display='';
+  }
+  // Recent tickets
+  const recentList = isRequester ? myList.slice(0,5) : [...tickets].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,4);
+  const recentEl = document.getElementById('dash-recent');
+  const titleLbl = document.getElementById('dash-recent-title');
+  if (titleLbl) titleLbl.textContent = isRequester ? 'My Latest Requests' : 'Recent Tickets';
+  if (recentEl) {
+    if (!recentList.length) { recentEl.innerHTML='<div class="empty-state" style="padding:20px"><div class="empty-icon">🎫</div><div class="empty-title">No tickets yet</div></div>'; }
+    else recentEl.innerHTML = '<div>'+recentList.map(t=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--bdr);cursor:pointer;" onclick="openDetail('${t.id}')">
+        <div style="flex:1"><div style="font-size:13px;font-weight:700">${t.equipment||'No equipment'}</div><div style="font-size:11px;color:var(--muted)">${t.id} · ${t.branch}</div></div>
+        <div>${statusBadge(t.status)}</div>
+      </div>`).join('')+'</div>';
+  }
+}
+
+function renderCharts(list, wrap) {
+  const s = getStats(list);
+  const total = list.length || 1;
+  const circ = 2*Math.PI*46;
+  const segs=[{v:s.newCount,c:'#005AA9'},{v:s.inProgress,c:'#d97706'},{v:s.completed,c:'#059669'},{v:s.onHold,c:'#dc2626'}];
+  let off=0;
+  const arcs=segs.map(g=>{if(!g.v)return'';const d=(g.v/total)*circ;const a=`<circle cx="55" cy="55" r="46" fill="none" stroke="${g.c}" stroke-width="13" stroke-dasharray="${d.toFixed(2)} ${(circ-d).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" stroke-linecap="round"/>`;off+=d;return a;}).join('');
+  const types=['maintenance','installation','spare-parts','amc'];
+  const tc={maintenance:'#2E75B6',installation:'#059669','spare-parts':'#d97706',amc:'#005AA9'};
+  const tl={maintenance:'Maint.',installation:'Install','spare-parts':'Parts',amc:'AMC'};
+  const max=Math.max(...types.map(tp=>list.filter(x=>x.type===tp).length),1);
+  wrap.innerHTML = `
+    <div class="card"><div class="card-hdr"><div class="card-title">Status Breakdown</div></div>
+    <div class="card-body" style="padding:14px;"><div class="donut-row">
+      <div class="donut-wrap"><svg width="110" height="110" viewBox="0 0 110 110"><circle cx="55" cy="55" r="46" fill="none" stroke="#e8eaed" stroke-width="13"/>${arcs}</svg><div class="donut-center"><div class="donut-val">${total}</div><div class="donut-lbl">Total</div></div></div>
+      <div class="legend">
+        ${[{l:'New',c:'#005AA9',v:s.newCount},{l:'In Progress',c:'#d97706',v:s.inProgress},{l:'Completed',c:'#059669',v:s.completed},{l:'On Hold',c:'#dc2626',v:s.onHold}].map(x=>`<div class="legend-row"><div class="row gap-sm"><div class="legend-dot" style="background:${x.c}"></div><span>${x.l}</span></div><strong>${x.v}</strong></div>`).join('')}
+      </div>
+    </div></div></div>
+    <div class="card"><div class="card-hdr"><div class="card-title">By Type</div></div>
+    <div class="card-body" style="padding:14px;"><div class="bar-chart">
+      ${types.map(tp=>{const cnt=list.filter(x=>x.type===tp).length;return`<div class="bar-row"><div class="bar-label">${tl[tp]}</div><div class="bar-track"><div class="bar-fill" style="width:${(cnt/max*100).toFixed(0)}%;background:${tc[tp]}"></div></div><div class="bar-val" style="color:${tc[tp]}">${cnt}</div></div>`;}).join('')}
+    </div></div></div>`;
+}
+
+// ── TICKET LIST ──
+function getFilteredTickets() {
+  const role = currentUser?.role;
+  let list = [...tickets].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  // Requesters only see their own
+  if (role?.startsWith('requester')) list = list.filter(t=>t.createdBy===currentUser.id);
+  // Technician sees only assigned to them
+  if (role==='technician') list = list.filter(t=>t.technician==='Marcus Reid');
+  if (currentSearch) {
+    const q=currentSearch.toLowerCase();
+    list=list.filter(t=>t.id.toLowerCase().includes(q)||t.customer.toLowerCase().includes(q)||t.equipment.toLowerCase().includes(q)||(t.description||'').toLowerCase().includes(q));
+  }
+  if (currentFilter!=='all') {
+    if (['new','assigned','in-progress','completed','on-hold','closed'].includes(currentFilter)) list=list.filter(t=>t.status===currentFilter);
+    else if (['maintenance','installation','spare-parts','amc'].includes(currentFilter)) list=list.filter(t=>t.type===currentFilter);
+  }
+  return list;
 }
 
 function buildTicketCard(t, idx=0) {
-  const priClass = t.priority === 'urgent' ? 'pri-urgent' : t.priority === 'high' ? 'pri-high' : 'pri-normal';
-  const av = TECH_COLORS[t.technician] || '#6b7280';
-  const actionBtn = t.status === 'completed'
-    ? `<button class="btn btn-outline btn-sm" style="flex:1" onclick="viewReport('${t.id}')">View Report</button>`
-    : `<button class="btn btn-p btn-sm" style="flex:1" onclick="updateTicketStatus('${t.id}')">Update Status</button>`;
+  const cfg = ROLE_CONFIG[currentUser?.role]||{};
+  const pri = t.priority==='urgent'?'pri-urgent':t.priority==='high'?'pri-high':'pri-normal';
+  const av = TECH_COLORS[t.technician]||'#6b7280';
+  // Action buttons based on role
+  let actions = `<button class="btn btn-outline btn-sm" style="flex:1" onclick="event.stopPropagation();openDetail('${t.id}')">View</button>`;
+  if (cfg.canChangeStatus && t.status!=='completed') actions += `<button class="btn btn-p btn-sm" style="flex:1" onclick="event.stopPropagation();openDetail('${t.id}')">Update</button>`;
+  if (cfg.canAssign && t.status==='new') actions += `<button class="btn btn-warn btn-sm" style="font-size:12px" onclick="event.stopPropagation();quickAssign('${t.id}')">Assign</button>`;
+  if ((currentUser?.role==='admin'||currentUser?.role==='technical_manager') && t.status!=='completed')
+    actions += `<button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteTicket('${t.id}')" title="Delete">🗑</button>`;
   return `
-  <div class="tkt-card ${priClass}" style="animation-delay:${idx*0.04}s" onclick="openDetail('${t.id}')">
+  <div class="tkt-card ${pri}" style="animation-delay:${idx*.04}s" onclick="openDetail('${t.id}')">
     <div class="tkt-top"><span class="tkt-id">${t.id}</span>${statusBadge(t.status)}</div>
-    <div class="tkt-title">${t.equipment || t.description || 'No title'}</div>
+    <div class="tkt-title">${t.equipment||t.description||'No title'}</div>
     <div class="tkt-location">📍 ${t.branch} · ${(t.region||'').charAt(0).toUpperCase()+(t.region||'').slice(1)} · ${t.customer}</div>
-    <div class="tkt-footer">
-      ${typeBadge(t.type)}
-      ${priorityPill(t.priority)}
-      <div class="tkt-tech" style="margin-left:auto">
-        <div class="tech-av" style="background:${av}">${techInitials(t.technician||'?')}</div>
-        <span style="font-size:12px;color:var(--muted)">${(t.technician||'Unassigned').split(' ')[0]}</span>
+    <div class="tkt-footer">${typeBadge(t.type)} ${priorityPill(t.priority)}
+      <div style="display:flex;align-items:center;gap:5px;margin-left:auto">
+        <div class="tech-av" style="background:${av}">${initials(t.technician||'?')}</div>
+        <span style="font-size:12px;color:var(--muted)">${(t.technician||'?').split(' ')[0]}</span>
       </div>
     </div>
-    <div class="tkt-actions">
-      <button class="btn btn-outline btn-sm" style="flex:1" onclick="event.stopPropagation();openDetail('${t.id}')">View</button>
-      ${actionBtn}
-      <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteTicket('${t.id}')" title="Delete">🗑</button>
-    </div>
+    <div class="tkt-actions">${actions}</div>
   </div>`;
 }
 
 function renderTicketList() {
-  const container = document.getElementById('ticket-list-container');
-  if (!container) return;
+  const el = document.getElementById('ticket-list-container');
+  if (!el) return;
   const list = getFilteredTickets();
   document.getElementById('ticket-count-label').textContent = `${list.length} ticket${list.length!==1?'s':''}`;
-  if (!list.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎫</div><div class="empty-title">No Tickets Found</div><div class="empty-desc">Try a different filter or create a new ticket.</div><button class="btn btn-p" style="margin-top:16px" onclick="openNewTicket()">+ Create First Ticket</button></div>`;
-    return;
-  }
-  container.innerHTML = list.map((t,i) => buildTicketCard(t,i)).join('');
+  el.innerHTML = list.length ? list.map((t,i)=>buildTicketCard(t,i)).join('') :
+    `<div class="empty-state"><div class="empty-icon">🎫</div><div class="empty-title">No Tickets Found</div><button class="btn btn-p" style="margin-top:14px" onclick="openNewTicket()">+ Create</button></div>`;
 }
 
-const KANBAN_COLS = [
-  { key:'new', label:'🆕 New', hdr:'background:#e0f2fe;color:#0369a1' },
-  { key:'assigned', label:'👷 Assigned', hdr:'background:#dbeafe;color:#1d4ed8' },
-  { key:'in-progress', label:'⚙️ In Progress', hdr:'background:#fef3c7;color:#92400e' },
-  { key:'on-hold', label:'⏸ On Hold', hdr:'background:var(--err-bg);color:#991b1b' },
-  { key:'completed', label:'✅ Completed', hdr:'background:var(--ok-bg);color:#065f46' },
-  { key:'closed', label:'🔒 Closed', hdr:'background:#f3f4f6;color:#374151' },
+const KANBAN_COLS=[
+  {key:'new',label:'🆕 New',hdr:'background:#e0f2fe;color:#0369a1'},
+  {key:'assigned',label:'👷 Assigned',hdr:'background:#dbeafe;color:#1d4ed8'},
+  {key:'in-progress',label:'⚙️ In Progress',hdr:'background:#fef3c7;color:#92400e'},
+  {key:'on-hold',label:'⏸ On Hold',hdr:'background:var(--err-bg);color:#991b1b'},
+  {key:'completed',label:'✅ Completed',hdr:'background:var(--ok-bg);color:#065f46'},
 ];
 function renderKanban() {
   const wrap = document.getElementById('kanban-container');
   if (!wrap) return;
-  const search = currentSearch.toLowerCase();
-  wrap.innerHTML = KANBAN_COLS.map(col => {
-    let colTickets = tickets.filter(t => t.status === col.key);
-    if (search) colTickets = colTickets.filter(t =>
-      t.id.toLowerCase().includes(search) ||
-      t.customer.toLowerCase().includes(search) ||
-      t.equipment.toLowerCase().includes(search)
-    );
-    const cards = colTickets.map(t => `
-      <div class="k-card" onclick="openDetail('${t.id}')">
-        <div class="k-id">${t.id}</div>
-        <div class="k-title">${t.equipment||t.description||'No title'}</div>
-        <div class="k-meta">${t.branch} · ${t.customer}</div>
-        <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${typeBadge(t.type)}${priorityPill(t.priority)}</div>
-      </div>`).join('');
-    return `
-      <div class="k-col">
-        <div class="k-col-hdr" style="${col.hdr}">${col.label} <span>${colTickets.length}</span></div>
-        <div class="k-col-body">${cards || '<div style="font-size:12px;color:var(--muted);padding:8px;text-align:center">No tickets</div>'}</div>
-      </div>`;
+  const base = getFilteredTickets();
+  wrap.innerHTML = KANBAN_COLS.map(col=>{
+    const items = base.filter(t=>t.status===col.key);
+    return `<div class="k-col">
+      <div class="k-col-hdr" style="${col.hdr}">${col.label} <span>${items.length}</span></div>
+      <div class="k-col-body">${items.map(t=>`<div class="k-card" onclick="openDetail('${t.id}')"><div class="k-id">${t.id}</div><div class="k-title">${t.equipment||t.description||'Ticket'}</div><div class="k-meta">${t.branch} · ${t.customer}</div><div style="display:flex;gap:4px;margin-top:5px">${typeBadge(t.type)}${priorityPill(t.priority)}</div></div>`).join('')||'<div style="font-size:11px;color:var(--muted);padding:8px;text-align:center">Empty</div>'}
+      </div>
+    </div>`;
   }).join('');
-}
-
-function renderDashboardRecent() {
-  const container = document.getElementById('dash-recent-tickets');
-  if (!container) return;
-  const recent = [...tickets].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,4);
-  if (!recent.length) {
-    container.innerHTML = `<div class="empty-state" style="padding:24px"><div class="empty-icon" style="font-size:2rem">🎫</div><div class="empty-title">No tickets yet</div><div class="empty-desc">Create your first ticket!</div></div>`;
-    return;
-  }
-  container.innerHTML = `<div style="display:flex;flex-direction:column;gap:0">` +
-    recent.map(t => `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--bdr);cursor:pointer;" onclick="openDetail('${t.id}')">
-        <div>
-          <div style="font-size:13px;font-weight:700">${t.equipment||'No equipment'}</div>
-          <div style="font-size:11px;color:var(--muted)">${t.id} · ${t.branch}</div>
-        </div>
-        <div style="margin-left:auto;display:flex;gap:6px;align-items:center">${statusBadge(t.status)}</div>
-      </div>`).join('') + `</div>`;
-}
-
-function renderDonut() {
-  const svg = document.getElementById('donut-svg');
-  const legend = document.getElementById('status-legend');
-  const totalEl = document.getElementById('donut-total');
-  if (!svg || !legend) return;
-  const s = getStats();
-  const total = tickets.length;
-  totalEl.textContent = total;
-  const segments = [
-    { label:'Open/New', val:s.newCount, color:'#005AA9' },
-    { label:'In Progress', val:s.inProgress, color:'#d97706' },
-    { label:'Completed', val:s.completed, color:'#059669' },
-    { label:'On Hold', val:s.onHold, color:'#dc2626' },
-    { label:'Assigned', val:s.assigned, color:'#2E75B6' },
-  ];
-  const circ = 2 * Math.PI * 46;
-  let offset = 0;
-  const circles = segments.map(seg => {
-    if (!total || !seg.val) return '';
-    const dash = (seg.val / total) * circ;
-    const c = `<circle cx="55" cy="55" r="46" fill="none" stroke="${seg.color}" stroke-width="13" stroke-dasharray="${dash.toFixed(2)} ${(circ-dash).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" stroke-linecap="round"/>`;
-    offset += dash;
-    return c;
-  }).join('');
-  svg.innerHTML = `<circle cx="55" cy="55" r="46" fill="none" stroke="#e8eaed" stroke-width="13"/>${circles}`;
-  legend.innerHTML = segments.map(s => `
-    <div class="legend-row">
-      <div class="row gap-sm"><div class="legend-dot" style="background:${s.color}"></div><span>${s.label}</span></div>
-      <strong>${s.val}</strong>
-    </div>`).join('');
-}
-
-function renderTypeChart() {
-  const el = document.getElementById('type-chart');
-  if (!el) return;
-  const types = ['maintenance','installation','spare-parts','amc'];
-  const colors = { maintenance:'#2E75B6', installation:'#059669', 'spare-parts':'#d97706', amc:'#005AA9' };
-  const labels = { maintenance:'Maintenance', installation:'Installation', 'spare-parts':'Spare Parts', amc:'AMC' };
-  const counts = types.map(t => ({ type:t, count: tickets.filter(x=>x.type===t).length }));
-  const max = Math.max(...counts.map(c=>c.count), 1);
-  el.innerHTML = `<div class="bar-chart">` +
-    counts.map(c => `
-      <div class="bar-row">
-        <div class="bar-label">${labels[c.type]}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${(c.count/max*100).toFixed(0)}%;background:${colors[c.type]}"></div></div>
-        <div class="bar-val" style="color:${colors[c.type]}">${c.count}</div>
-      </div>`).join('') + `</div>`;
 }
 
 function renderReports() {
   const el = document.getElementById('reports-list');
-  const countEl = document.getElementById('reports-count');
+  const cnt = document.getElementById('reports-count');
   if (!el) return;
-  const done = tickets.filter(t => t.status === 'completed' || t.status === 'closed');
-  if (countEl) countEl.textContent = `${done.length} completed ticket${done.length!==1?'s':''}`;
-  if (!done.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No completed tickets yet</div></div>`;
-    return;
-  }
-  el.innerHTML = done.map(t => `
+  const done = tickets.filter(t=>['completed','closed'].includes(t.status));
+  if (cnt) cnt.textContent = `${done.length} completed tickets`;
+  el.innerHTML = done.length ? done.map(t=>`
     <div class="card" style="padding:14px;cursor:pointer" onclick="openDetail('${t.id}')">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-        <div>
-          <div style="font-size:13px;font-weight:700">${t.equipment||'No equipment'}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${t.id} · ${t.branch} · ${t.customer}</div>
-          <div style="display:flex;gap:5px;margin-top:6px">${typeBadge(t.type)}${statusBadge(t.status)}</div>
-        </div>
-        <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();showToast('Downloading PDF for ${t.id}')">📥 PDF</button>
+        <div><div style="font-size:13px;font-weight:700">${t.equipment||'Ticket'}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${t.id} · ${t.branch} · ${t.customer}</div><div style="display:flex;gap:5px;margin-top:6px">${typeBadge(t.type)}${statusBadge(t.status)}</div></div>
+        <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();showToast('PDF generated for ${t.id}')">📥 PDF</button>
       </div>
-    </div>`).join('');
+    </div>`).join('') : '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No completed tickets yet</div></div>';
 }
 
 function updateMenuBadge() {
-  const open = tickets.filter(t=>!['completed','closed'].includes(t.status)).length;
   const el = document.getElementById('menu-open-count');
-  if (el) el.textContent = open;
+  if (el) el.textContent = tickets.filter(t=>!['completed','closed'].includes(t.status)).length;
 }
-
 function updateSLABanner() {
-  const overdue = tickets.filter(t => t.priority === 'urgent' && t.status === 'on-hold');
-  const banner = document.getElementById('sla-banner');
-  const text = document.getElementById('sla-banner-text');
-  if (!banner) return;
-  if (overdue.length) {
-    banner.style.display = 'flex';
-    text.textContent = `${overdue.length} SLA breach${overdue.length>1?'es':''} — ${overdue.map(t=>t.id).join(', ')}`;
-  } else {
-    banner.style.display = 'none';
-  }
+  const overdue = tickets.filter(t=>t.priority==='urgent'&&t.status==='on-hold');
+  const b=document.getElementById('sla-banner'), txt=document.getElementById('sla-text');
+  if (!b) return;
+  const isManager = ['technical_manager','admin'].includes(currentUser?.role);
+  if (overdue.length && isManager) { b.style.display='flex'; txt.textContent=`${overdue.length} SLA breach${overdue.length>1?'es':''} — ${overdue.map(t=>t.id).join(', ')}`; }
+  else b.style.display='none';
 }
 
-function updateTechApp() {
-  const inProgress = tickets.filter(t => t.status === 'in-progress' && t.technician === 'Marcus Reid');
-  const countEl = document.getElementById('tech-job-count');
-  const allJobs = tickets.filter(t => t.technician === 'Marcus Reid');
-  if (countEl) countEl.textContent = `${allJobs.length} Jobs Assigned`;
-  if (inProgress.length) {
-    const t = inProgress[0];
-    document.getElementById('tech-active-id').textContent = `${t.id} · ACTIVE JOB`;
-    document.getElementById('tech-active-title').textContent = t.equipment || t.description;
-    document.getElementById('tech-active-loc').textContent = `📍 ${t.branch} · ${t.customer}`;
-    document.getElementById('tech-priority-badge').textContent = `🏷 ${t.priority.toUpperCase()} Priority`;
-  } else {
-    document.getElementById('tech-active-id').textContent = 'No active job';
-    document.getElementById('tech-active-title').textContent = 'All caught up!';
-    document.getElementById('tech-active-loc').textContent = 'No in-progress tickets assigned to Marcus Reid';
-    document.getElementById('tech-priority-badge').textContent = '✓ Clear';
-  }
+// ── MY REQUESTS (Requester) ──
+function renderMyRequests() {
+  const el = document.getElementById('my-requests-list');
+  if (!el) return;
+  let list = tickets.filter(t=>t.createdBy===currentUser?.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if (myFilter!=='all') list=list.filter(t=>t.status===myFilter);
+  const sub = document.getElementById('my-req-sub');
+  if (sub) sub.textContent = `${list.length} request${list.length!==1?'s':''} submitted`;
+  el.innerHTML = list.length ? list.map((t,i)=>buildTicketCard(t,i)).join('') :
+    `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No requests yet</div><button class="btn btn-p" style="margin-top:14px" onclick="goPage('create-request')">Create First Request</button></div>`;
+}
+function setMyFilter(f,el){myFilter=f;document.querySelectorAll('#page-my-requests .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderMyRequests();}
+
+// ── SCHEDULE VIEW (Requester read-only) ──
+function renderSchedule() {
+  const body = document.getElementById('schedule-cal-body');
+  const weekList = document.getElementById('schedule-week-list');
+  if (!body) return;
+  const yr=2026, mo=3; // April 2026
+  const first = new Date(yr, mo, 1);
+  const startDay = first.getDay();
+  const daysInMonth = new Date(yr, mo+1, 0).getDate();
+  let cells = [];
+  for(let i=startDay-1;i>=0;i--) cells.push({day:new Date(yr,mo,0).getDate()-i, thisMonth:false});
+  for(let i=1;i<=daysInMonth;i++) cells.push({day:i,thisMonth:true});
+  while(cells.length%7!==0) cells.push({day:cells.length-daysInMonth-startDay+1,thisMonth:false});
+  const events = tickets.filter(t=>t.date&&t.status!=='completed');
+  body.innerHTML = cells.map(c=>{
+    const isToday=c.thisMonth&&c.day===15;
+    const key=c.thisMonth?`2026-04-${String(c.day).padStart(2,'0')}`:null;
+    const dayEvts=key?events.filter(e=>e.date===key):[];
+    const chips=dayEvts.slice(0,2).map(e=>`<div class="sch-event" style="background:rgba(0,90,169,.12);color:var(--p)" title="${e.id}">${e.id}</div>`).join('');
+    const more=dayEvts.length>2?`<div style="font-size:9px;color:var(--muted)">+${dayEvts.length-2}</div>`:'';
+    return `<div class="sch-day ${!c.thisMonth?'opacity-40':''}${isToday?' today':''}"><div class="sch-day-num" style="${!c.thisMonth?'opacity:.3':''}">${c.day}</div>${chips}${more}</div>`;
+  }).join('');
+  // This week visits
+  const thisWeek = tickets.filter(t=>['2026-04-14','2026-04-15','2026-04-16','2026-04-17','2026-04-18'].includes(t.date));
+  if (weekList) weekList.innerHTML = thisWeek.map(t=>`
+    <div class="card" style="padding:12px 14px;display:flex;align-items:center;gap:10px;">
+      <div style="font-family:'JetBrains Mono';font-size:11px;color:var(--p);font-weight:700;width:80px;flex-shrink:0">${t.date?.slice(5)||'—'}</div>
+      <div style="flex:1"><div style="font-size:13px;font-weight:700">${t.equipment||'Visit'}</div><div style="font-size:11px;color:var(--muted)">${t.technician} · ${t.branch}</div></div>
+      ${statusBadge(t.status)}
+    </div>`).join('') || '<div class="empty-state" style="padding:20px"><div class="empty-icon">📅</div><div class="empty-title">No visits this week</div></div>';
 }
 
-// ── SUBMIT NEW TICKET ──
-function submitNewTicket() {
-  const customer = document.getElementById('f-customer').value.trim();
-  const branch = document.getElementById('f-branch').value;
-  const errEl = document.getElementById('form-error');
-  if (!customer) { errEl.textContent = 'Customer name is required.'; errEl.style.display='block'; document.getElementById('f-customer').focus(); return; }
-  if (!branch) { errEl.textContent = 'Please select a team / department.'; errEl.style.display='block'; document.getElementById('f-branch').focus(); return; }
-  errEl.style.display = 'none';
-
-  const type = document.querySelector('.type-btn.sel')?.dataset.type || 'maintenance';
-  const newTicket = {
-    id: nextTicketId(),
-    type,
-    status: 'new',
-    priority: document.getElementById('f-priority').value,
-    customer,
-    branch,
-    region: document.getElementById('f-region').value,
-    equipment: document.getElementById('f-equipment').value.trim() || 'Equipment TBD',
-    description: document.getElementById('f-description').value.trim(),
-    technician: document.getElementById('f-tech').value === 'Auto-assign' ? autoAssign() : document.getElementById('f-tech').value,
-    date: document.getElementById('f-date').value || new Date().toISOString().split('T')[0],
-    createdAt: Date.now(),
-  };
-  tickets.unshift(newTicket);
-  renderAll();
-  closeModal('new-ticket-modal');
-  resetForm();
-  showToast(`✅ ${newTicket.id} created successfully!`);
-  // Switch to tickets page to show the new ticket
-  setTimeout(() => goPage('tickets', document.querySelector('[data-page=tickets]')), 400);
-}
-
-function autoAssign() {
+// ── WORKLOAD (Read-only) ──
+function renderWorkload() {
+  const el = document.getElementById('workload-bars');
+  if (!el) return;
   const techs = ['Marcus Reid','Sarah Kim','Jordan Blake','Priya Nair','Chris Okafor','Taylor Wong'];
-  const counts = techs.map(t => ({ t, c: tickets.filter(x=>x.technician===t&&!['completed','closed'].includes(x.status)).length }));
-  counts.sort((a,b) => a.c - b.c);
-  return counts[0].t;
+  const counts = techs.map(t=>({t, c:tickets.filter(x=>x.technician===t&&!['completed','closed'].includes(x.status)).length}));
+  const max = Math.max(...counts.map(c=>c.c),1);
+  el.innerHTML = `<div class="bar-chart">${counts.map(c=>`<div class="bar-row"><div class="bar-label" style="width:100px">${c.t.split(' ')[0]}</div><div class="bar-track"><div class="bar-fill" style="width:${(c.c/max*100).toFixed(0)}%;background:var(--p)"></div></div><div class="bar-val">${c.c}</div></div>`).join('')}</div>`;
 }
 
-function resetForm() {
-  document.getElementById('f-customer').value = '';
-  document.getElementById('f-branch').value = '';
-  document.getElementById('f-equipment').value = '';
-  document.getElementById('f-description').value = '';
-  document.getElementById('f-priority').value = 'normal';
-  document.getElementById('f-tech').value = 'Auto-assign';
-  document.getElementById('f-date').value = '';
-  document.getElementById('f-region').value = 'east';
-  document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('sel'));
-  document.querySelector('[data-type=maintenance]').classList.add('sel');
+// ── MY JOBS (Technician) ──
+function renderMyJobs() {
+  const el = document.getElementById('my-jobs-list');
+  if (!el) return;
+  let list = tickets.filter(t=>t.technician==='Marcus Reid');
+  if (jobFilter!=='all') list=list.filter(t=>t.status===jobFilter);
+  list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const cnt = document.getElementById('my-jobs-count');
+  const sub = document.getElementById('my-jobs-sub');
+  if(cnt) cnt.textContent = `${list.filter(t=>t.status==='in-progress').length} active`;
+  if(sub) sub.textContent = `${list.length} job${list.length!==1?'s':''} assigned to you`;
+  el.innerHTML = list.length ? list.map(t=>`
+    <div class="job-card ${t.status==='in-progress'?'active-job':''}">
+      <div class="job-card-header"><div class="job-card-id">${t.id}</div>${statusBadge(t.status)}</div>
+      <div class="job-card-title">${t.equipment||'No equipment'}</div>
+      <div class="job-card-meta">📍 ${t.branch} · ${t.customer}<br>📅 ${t.date||'—'} · ${priorityPill(t.priority)}</div>
+      <div style="display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--bdr)">
+        <button class="btn btn-outline btn-sm" style="flex:1" onclick="openDetail('${t.id}')">Details</button>
+        ${t.status!=='completed'?`<button class="btn btn-p btn-sm" style="flex:1" onclick="startTechVisit('${t.id}')">Start Visit</button>`:'<button class="btn btn-outline btn-sm" style="flex:1;color:var(--ok);border-color:var(--ok)">✓ Done</button>'}
+      </div>
+    </div>`).join('') : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No jobs assigned</div></div>`;
+}
+function setJobFilter(f,el){jobFilter=f;document.querySelectorAll('#page-my-jobs .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderMyJobs();}
+
+function startTechVisit(id) {
+  activeTechJobId = id;
+  const t = tickets.find(x=>x.id===id);
+  if (!t) return;
+  t.status = 'in-progress';
+  document.getElementById('av-id').textContent = `${t.id} · ACTIVE VISIT`;
+  document.getElementById('av-title').textContent = t.equipment || 'Visit';
+  document.getElementById('av-loc').textContent = `📍 ${t.branch} · ${t.customer}`;
+  // Reset checklist
+  techCheckState = {checkin:true,before:false,parts:false,notes:false,after:false,sig:false};
+  ['before','parts','notes','after','sig'].forEach(k=>{
+    const row=document.getElementById('act-'+k);const chev=document.getElementById('act-'+k+'-chev');
+    if(row){row.classList.remove('done');}if(chev)chev.textContent='›';
+  });
+  renderAll();
+  goPage('active-visit');
+  showToast(`Visit started for ${t.id}`);
+}
+
+function techAction(key) {
+  techCheckState[key] = !techCheckState[key];
+  const row=document.getElementById('act-'+key);
+  const chev=document.getElementById('act-'+key+'-chev');
+  const sub=document.getElementById('act-'+key+'-sub');
+  if (!row) return;
+  if (techCheckState[key]) {
+    row.classList.add('done'); if(chev)chev.textContent='✅';
+    const msgs={before:'2 photos ✓',parts:'2 parts logged ✓',notes:'Notes saved ✓',after:'After photos ✓',sig:'Signature captured ✓'};
+    if(sub&&msgs[key]) sub.textContent=msgs[key];
+    showToast(key.charAt(0).toUpperCase()+key.slice(1)+' ✅');
+  } else {
+    row.classList.remove('done'); if(chev)chev.textContent='›';
+    const def={before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'};
+    if(sub&&def[key]) sub.textContent=def[key];
+  }
+}
+
+function closeTechVisit() {
+  if (!activeTechJobId) { showToast('No active visit'); return; }
+  if (!confirm(`Close visit for ${activeTechJobId}?`)) return;
+  const t = tickets.find(x=>x.id===activeTechJobId);
+  if (t) t.status = 'completed';
+  activeTechJobId = null;
+  techCheckState = {checkin:true,before:false,parts:false,notes:false,after:false,sig:false};
+  ['before','parts','notes','after','sig'].forEach(k=>{
+    const row=document.getElementById('act-'+k);const chev=document.getElementById('act-'+k+'-chev');
+    if(row)row.classList.remove('done');if(chev)chev.textContent='›';
+  });
+  document.getElementById('av-id').textContent='No active job';
+  document.getElementById('av-title').textContent='All visits complete!';
+  document.getElementById('av-loc').textContent='Go to My Jobs to start a new visit';
+  renderAll();
+  showToast('✅ Visit closed! Report generated.');
+  goPage('my-jobs');
+}
+
+// ── ADMIN ──
+function renderAdmin() {
+  const el = document.getElementById('admin-user-list');
+  const roleTagMap={requester_consumer:'role-tag-req_c',requester_commercial:'role-tag-req_com',technical_manager:'role-tag-mgr',technician:'role-tag-tech',admin:'role-tag-admin'};
+  if (el) el.innerHTML = demoUsers.map(u=>`
+    <div class="admin-user-row">
+      <div class="menu-avatar" style="background:${u.color};width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff;flex-shrink:0">${u.avatar}</div>
+      <div style="flex:1"><div style="font-size:13px;font-weight:700">${u.name}</div><div style="font-size:11px;color:var(--muted)">${u.email}</div></div>
+      <div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px" class="${roleTagMap[u.role]||''}">${u.roleLabel.replace('Requester — ','')}</div>
+    </div>`).join('');
+  const s = getStats();
+  const atEl=document.getElementById('admin-total'), adEl=document.getElementById('admin-done'), aoEl=document.getElementById('admin-open');
+  if(atEl)atEl.textContent=s.total; if(adEl)adEl.textContent=s.completed; if(aoEl)aoEl.textContent=s.open;
 }
 
 // ── TICKET DETAIL ──
 function openDetail(id) {
   const t = tickets.find(x=>x.id===id);
+  const cfg = ROLE_CONFIG[currentUser?.role]||{};
   if (!t) return;
-  document.getElementById('detail-title').textContent = t.equipment || t.description || 'Ticket';
+  document.getElementById('detail-title').textContent = t.equipment||t.description||'Ticket';
   document.getElementById('detail-id-label').textContent = `${t.id} · Created ${new Date(t.createdAt||Date.now()).toLocaleDateString()}`;
-  const statuses = ['new','assigned','in-progress','completed','on-hold','closed'];
-  const statusPills = statuses.map(s => `<button class="status-pill ${t.status===s?'sel':''}" style="${t.status===s?statusStyle(s):''}" onclick="changeStatus('${id}','${s}',this)">${s.replace('-',' ').replace(/\b\w/g,l=>l.toUpperCase())}</button>`).join('');
+  const statuses=['new','assigned','in-progress','completed','on-hold','closed'];
+  const sStyle={new:'background:#e0f2fe;color:#0369a1;border-color:#0369a1',assigned:'background:#dbeafe;color:#1d4ed8;border-color:#1d4ed8','in-progress':'background:var(--warn-bg);color:var(--warn);border-color:var(--warn)',completed:'background:var(--ok-bg);color:var(--ok);border-color:var(--ok)','on-hold':'background:var(--err-bg);color:#991b1b;border-color:#991b1b',closed:'background:#f3f4f6;color:#374151;border-color:#374151'};
+  const statusPills = cfg.canChangeStatus
+    ? `<div class="status-btns">${statuses.map(s=>`<button class="status-pill ${t.status===s?'sel':''}" style="${t.status===s?sStyle[s]:''}" onclick="changeStatus('${id}','${s}',this)">${s.replace('-',' ').replace(/\b\w/g,l=>l.toUpperCase())}</button>`).join('')}</div>`
+    : `<div style="margin-top:8px">${statusBadge(t.status)} <span style="font-size:12px;color:var(--muted);margin-left:6px">Status changes require Technical Manager access.</span></div>`;
+  const techSelect = cfg.canAssign
+    ? `<div class="form-group" style="margin-top:12px"><label class="form-label">Reassign Technician</label><select class="form-select" onchange="reassignTech('${id}',this.value)"><option value="${t.technician}">${t.technician}</option>${['Marcus Reid','Sarah Kim','Jordan Blake','Priya Nair','Chris Okafor','Taylor Wong'].map(x=>`<option value="${x}">${x}</option>`).join('')}</select></div>`
+    : '';
+  const deleteBtn = (currentUser?.role==='admin'||currentUser?.role==='technical_manager')
+    ? `<button class="btn btn-danger btn-sm" onclick="deleteTicket('${id}')">🗑 Delete</button>` : '';
   document.getElementById('detail-body').innerHTML = `
     <div class="detail-grid">
-      <div class="detail-field"><div class="detail-field-lbl">Ticket ID</div><div class="detail-field-val" style="font-family:'JetBrains Mono';color:var(--p)">${t.id}</div></div>
+      <div class="detail-field"><div class="detail-field-lbl">ID</div><div class="detail-field-val" style="font-family:'JetBrains Mono';color:var(--p)">${t.id}</div></div>
       <div class="detail-field"><div class="detail-field-lbl">Type</div><div class="detail-field-val">${typeBadge(t.type)}</div></div>
       <div class="detail-field"><div class="detail-field-lbl">Customer</div><div class="detail-field-val">${t.customer}</div></div>
-      <div class="detail-field"><div class="detail-field-lbl">Branch</div><div class="detail-field-val">${t.branch}</div></div>
-      <div class="detail-field"><div class="detail-field-lbl">Region</div><div class="detail-field-val">${regionPill(t.region)}</div></div>
+      <div class="detail-field"><div class="detail-field-lbl">Team</div><div class="detail-field-val">${t.branch}</div></div>
+      <div class="detail-field"><div class="detail-field-lbl">Region</div><div class="detail-field-val">${t.region}</div></div>
       <div class="detail-field"><div class="detail-field-lbl">Priority</div><div class="detail-field-val">${priorityPill(t.priority)}</div></div>
-      <div class="detail-field"><div class="detail-field-lbl">Technician</div><div class="detail-field-val" style="display:flex;align-items:center;gap:6px"><div class="tech-av" style="background:${TECH_COLORS[t.technician]||'#666'}">${techInitials(t.technician||'?')}</div>${t.technician||'Unassigned'}</div></div>
+      <div class="detail-field"><div class="detail-field-lbl">Technician</div><div class="detail-field-val" style="display:flex;align-items:center;gap:6px"><div class="tech-av" style="background:${TECH_COLORS[t.technician]||'#666'}">${initials(t.technician||'?')}</div>${t.technician||'Unassigned'}</div></div>
       <div class="detail-field"><div class="detail-field-lbl">Date</div><div class="detail-field-val">${t.date||'—'}</div></div>
     </div>
-    ${t.equipment ? `<div class="detail-section"><div class="detail-section-label">Equipment</div><div style="background:var(--bg);border-radius:var(--rx);padding:10px 12px;font-size:14px;font-weight:600">${t.equipment}</div></div>` : ''}
-    ${t.description ? `<div class="detail-section"><div class="detail-section-label">Description</div><div style="background:var(--bg);border-radius:var(--rx);padding:10px 12px;font-size:13px;color:var(--muted)">${t.description}</div></div>` : ''}
-    <div class="detail-section">
-      <div class="detail-section-label">Update Status</div>
-      <div class="status-btns">${statusPills}</div>
-    </div>
+    ${t.equipment?`<div style="background:var(--bg);border-radius:var(--rx);padding:10px 12px;margin-bottom:12px;font-weight:600">${t.equipment}</div>`:''}
+    ${t.description?`<div style="background:var(--bg);border-radius:var(--rx);padding:10px 12px;margin-bottom:12px;font-size:13px;color:var(--muted)">${t.description}</div>`:''}
+    <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700;margin-bottom:6px">Status</div>${statusPills}</div>
+    ${techSelect}
     <div class="divider"></div>
-    <div style="display:flex;gap:8px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline" style="flex:1" onclick="closeModal('detail-modal')">Close</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteTicket('${t.id}')">🗑 Delete</button>
-      ${t.status !== 'completed' ? `<button class="btn btn-p" style="flex:1" onclick="changeStatus('${id}','completed');showToast('${id} marked complete!')">Mark Complete</button>` : ''}
+      ${deleteBtn}
     </div>`;
   openModal('detail-modal');
 }
 
-function statusStyle(s) {
-  const map = {
-    'new':'background:#e0f2fe;color:#0369a1;border-color:#0369a1',
-    'assigned':'background:#dbeafe;color:#1d4ed8;border-color:#1d4ed8',
-    'in-progress':'background:var(--warn-bg);color:var(--warn);border-color:var(--warn)',
-    'completed':'background:var(--ok-bg);color:var(--ok);border-color:var(--ok)',
-    'on-hold':'background:var(--err-bg);color:#991b1b;border-color:#991b1b',
-    'closed':'background:#f3f4f6;color:#374151;border-color:#374151',
-  };
-  return map[s] || '';
-}
-
-function changeStatus(id, newStatus, btn) {
-  const t = tickets.find(x=>x.id===id);
-  if (!t) return;
-  t.status = newStatus;
+function changeStatus(id, s, btn) {
+  const t = tickets.find(x=>x.id===id); if(!t)return;
+  t.status = s;
+  document.querySelectorAll('.status-pill').forEach(p=>{p.classList.remove('sel');p.style.cssText='';});
+  const sStyle={new:'background:#e0f2fe;color:#0369a1;border-color:#0369a1',assigned:'background:#dbeafe;color:#1d4ed8;border-color:#1d4ed8','in-progress':'background:var(--warn-bg);color:var(--warn);border-color:var(--warn)',completed:'background:var(--ok-bg);color:var(--ok);border-color:var(--ok)','on-hold':'background:var(--err-bg);color:#991b1b;border-color:#991b1b',closed:'background:#f3f4f6;color:#374151;border-color:#374151'};
+  if(btn){btn.classList.add('sel');btn.style.cssText=sStyle[s]||'';}
   renderAll();
-  // Update pills in modal if open
-  document.querySelectorAll('.status-pill').forEach(p => {
-    p.classList.remove('sel');
-    p.style.cssText = '';
-  });
-  if (btn) { btn.classList.add('sel'); btn.style.cssText = statusStyle(newStatus); }
-  showToast(`${id} → ${newStatus.replace('-',' ')}`);
+  showToast(`${id} → ${s.replace('-',' ')}`);
 }
-
-function updateTicketStatus(id) {
-  openDetail(id);
+function reassignTech(id, tech) {
+  const t=tickets.find(x=>x.id===id); if(t){t.technician=tech; renderAll(); showToast(`Assigned to ${tech}`);}
 }
-
+function quickAssign(id) {
+  const t=tickets.find(x=>x.id===id); if(!t)return;
+  t.status='assigned'; t.technician=autoAssign();
+  renderAll(); showToast(`${id} assigned to ${t.technician}`);
+}
 function deleteTicket(id) {
-  if (!confirm(`Delete ${id}? This cannot be undone.`)) return;
-  tickets = tickets.filter(t=>t.id!==id);
-  closeModal('detail-modal');
+  if(!confirm(`Delete ${id}?`))return;
+  tickets=tickets.filter(t=>t.id!==id); closeModal('detail-modal'); renderAll(); showToast(`🗑 ${id} deleted`);
+}
+function autoAssign() {
+  const techs=['Marcus Reid','Sarah Kim','Jordan Blake','Priya Nair','Chris Okafor','Taylor Wong'];
+  const counts=techs.map(t=>({t,c:tickets.filter(x=>x.technician===t&&!['completed','closed'].includes(x.status)).length}));
+  return counts.sort((a,b)=>a.c-b.c)[0].t;
+}
+
+// ── CREATE REQUEST ──
+function submitCreateRequest() {
+  const customer=document.getElementById('cr-customer').value.trim();
+  const branch=document.getElementById('cr-branch').value;
+  const errEl=document.getElementById('cr-error');
+  if(!customer){errEl.textContent='Contact name is required.';errEl.style.display='block';return;}
+  if(!branch){errEl.textContent='Please select a team.';errEl.style.display='block';return;}
+  errEl.style.display='none';
+  const type=document.querySelector('#page-create-request .type-btn.sel')?.dataset.type||'maintenance';
+  const t={
+    id:nextId(), type, status:'new', priority:document.getElementById('cr-priority').value,
+    customer, branch, region:document.getElementById('cr-region').value,
+    equipment:document.getElementById('cr-equipment').value.trim()||'Equipment TBD',
+    description:document.getElementById('cr-description').value.trim(),
+    technician:autoAssign(), date:document.getElementById('cr-date').value||new Date().toISOString().split('T')[0],
+    createdBy:currentUser.id, createdAt:Date.now(),
+  };
+  tickets.unshift(t);
+  // Clear form
+  document.getElementById('cr-customer').value='';document.getElementById('cr-equipment').value='';
+  document.getElementById('cr-description').value='';document.getElementById('cr-date').value='';
+  document.querySelectorAll('#page-create-request .type-btn').forEach(b=>b.classList.remove('sel'));
+  document.querySelector('#page-create-request [data-type=maintenance]').classList.add('sel');
   renderAll();
-  showToast(`🗑 ${id} deleted`);
+  showToast(`✅ ${t.id} submitted!`);
+  goPage('my-requests');
 }
 
-function viewReport(id) {
-  const t = tickets.find(x=>x.id===id);
-  if (!t) return;
-  goPage('reports', document.querySelector('[data-page=reports]'));
-  showToast(`Viewing report for ${id}`);
-}
-
-// ── TECH APP ACTIONS ──
-function toggleAction(key) {
-  techActions[key] = !techActions[key];
-  const row = document.getElementById('act-'+key);
-  const chevEl = document.getElementById('act-'+key+'-chev');
-  const subEl = document.getElementById('act-'+key+'-sub');
-  if (!row) return;
-  if (techActions[key]) {
-    row.classList.add('done');
-    if (chevEl) chevEl.textContent = '✅';
-    const msgs = {
-      before:'2 photos captured ✓', parts:'2 parts logged ✓',
-      notes:'Notes saved ✓', after:'2 after photos ✓', sig:'Signature captured ✓'
-    };
-    if (subEl && msgs[key]) subEl.textContent = msgs[key];
-    showToast(`${key.charAt(0).toUpperCase()+key.slice(1)} ✅`);
-  } else {
-    row.classList.remove('done');
-    if (chevEl) chevEl.textContent = '›';
-    const defaults = {
-      before:'Tap to capture', parts:'Tap to log parts',
-      notes:'Tap to add notes', after:'Tap to capture', sig:'Tap to collect signature'
-    };
-    if (subEl && defaults[key]) subEl.textContent = defaults[key];
-  }
-}
-
-function closeActiveVisit() {
-  const inProgress = tickets.filter(t => t.status === 'in-progress' && t.technician === 'Marcus Reid');
-  if (!inProgress.length) { showToast('No active visit to close'); return; }
-  if (!confirm(`Close visit for ${inProgress[0].id}?`)) return;
-  inProgress[0].status = 'completed';
-  Object.keys(techActions).forEach(k => { techActions[k] = k === 'checkin'; });
-  document.querySelectorAll('.action-row').forEach(r => r.classList.remove('done'));
-  document.getElementById('act-checkin').classList.add('done');
-  ['before','parts','notes','after','sig'].forEach(k => {
-    const c = document.getElementById('act-'+k+'-chev');
-    const s = document.getElementById('act-'+k+'-sub');
-    if(c) c.textContent = '›';
-    if(s) s.textContent = 'Tap to ' + (k==='parts'?'log parts':k==='notes'?'add notes':'capture');
-  });
-  renderAll();
-  showToast(`✅ Visit closed! Report generated for ${inProgress[0].id}`);
-}
-
-// ── FILTER / SEARCH ──
-function setFilter(f, el) {
-  currentFilter = f;
-  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
-  el.classList.add('active');
-  renderTicketList();
-  renderKanban();
-}
-function handleSearch(q) {
-  currentSearch = q;
-  renderTicketList();
-  renderKanban();
-}
-
-// ── VIEW TOGGLE ──
-function toggleView() {
-  kanbanMode = !kanbanMode;
-  document.getElementById('tkt-list-view').style.display = kanbanMode?'none':'block';
-  document.getElementById('tkt-kanban-view').style.display = kanbanMode?'block':'none';
-  document.getElementById('view-toggle').textContent = kanbanMode ? '☰ List' : '🗂 Kanban';
-  if (kanbanMode) renderKanban();
-}
-
-// ── NAVIGATION ──
-const PAGE_BNAV = { dashboard:'bn-dashboard', tickets:'bn-tickets', techapp:'bn-techapp', inventory:'bn-inventory' };
-function goPage(id, menuEl) {
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.menu-item').forEach(m=>m.classList.remove('active'));
-  const page = document.getElementById('page-'+id);
-  if (page) page.classList.add('active');
-  if (menuEl) menuEl.classList.add('active');
-  document.querySelectorAll('.bnav-item').forEach(b=>b.classList.remove('active'));
-  if (PAGE_BNAV[id]) document.getElementById(PAGE_BNAV[id])?.classList.add('active');
-  currentPage = id;
-  closeMenu();
-  const mc = document.getElementById('main-content');
-  if(mc) mc.scrollTop = 0; else window.scrollTo(0,0);
-}
-function goPageBnav(id) {
-  const menuEl = document.querySelector(`[data-page="${id}"]`);
-  goPage(id, menuEl);
-}
-function toggleMenu() {
-  document.getElementById('slide-menu').classList.toggle('open');
-  document.getElementById('menu-overlay').classList.toggle('open');
-}
-function closeMenu() {
-  document.getElementById('slide-menu').classList.remove('open');
-  document.getElementById('menu-overlay').classList.remove('open');
-}
-
-// ── MODALS ──
-function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-function handleModalBg(e, id) { if(e.target.id===id) closeModal(id); }
+// ── NEW TICKET MODAL (Manager/Admin) ──
 function openNewTicket() {
+  const cfg = ROLE_CONFIG[currentUser?.role]||{};
+  if (!cfg.canCreateRequest) { showToast('⛔ Your role cannot create tickets'); return; }
+  // Requesters → go to create-request page
+  if (currentUser?.role?.startsWith('requester')) { goPage('create-request'); return; }
   resetForm();
-  populateTeamDropdown();
-  document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
   openModal('new-ticket-modal');
 }
-
-// ── TYPE SELECTOR ──
+function submitNewTicket() {
+  const customer=document.getElementById('f-customer').value.trim();
+  const branch=document.getElementById('f-branch').value;
+  const errEl=document.getElementById('form-error');
+  if(!customer){errEl.textContent='Customer name is required.';errEl.style.display='block';return;}
+  if(!branch){errEl.textContent='Please select a team.';errEl.style.display='block';return;}
+  errEl.style.display='none';
+  const cfg=ROLE_CONFIG[currentUser?.role]||{};
+  const type=document.querySelector('#new-ticket-modal .type-btn.sel')?.dataset.type||'maintenance';
+  const techVal=document.getElementById('f-tech')?.value;
+  const t={
+    id:nextId(), type, status:'new', priority:document.getElementById('f-priority').value,
+    customer, branch, region:document.getElementById('f-region').value,
+    equipment:document.getElementById('f-equipment').value.trim()||'Equipment TBD',
+    description:document.getElementById('f-description').value.trim(),
+    technician:(cfg.canAssign&&techVal&&techVal!=='Auto-assign')?techVal:autoAssign(),
+    date:document.getElementById('f-date').value||new Date().toISOString().split('T')[0],
+    createdBy:currentUser.id, createdAt:Date.now(),
+  };
+  tickets.unshift(t);
+  closeModal('new-ticket-modal');
+  resetForm();
+  renderAll();
+  showToast(`✅ ${t.id} created!`);
+  setTimeout(()=>goPage('tickets'),300);
+}
+function resetForm() {
+  ['f-customer','f-equipment','f-description'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  const fp=document.getElementById('f-priority');if(fp)fp.value='normal';
+  const ft=document.getElementById('f-tech');if(ft)ft.value='Auto-assign';
+  const fd=document.getElementById('f-date');if(fd)fd.value='';
+  const fr=document.getElementById('f-region');if(fr)fr.value='east';
+  document.querySelectorAll('#new-ticket-modal .type-btn').forEach(b=>b.classList.remove('sel'));
+  const def=document.querySelector('#new-ticket-modal [data-type=maintenance]');if(def)def.classList.add('sel');
+  document.getElementById('form-error').style.display='none';
+}
+function populateTeamDropdown(id) {
+  const sel=document.getElementById(id); if(!sel)return;
+  sel.innerHTML='<option value="">Select team...</option>'+teamOptions.map(t=>`<option value="${t}">${t}</option>`).join('');
+}
 function selectType(el) {
-  document.querySelectorAll('.type-btn').forEach(b=>b.classList.remove('sel'));
+  const parent=el.closest('.type-grid');
+  parent.querySelectorAll('.type-btn').forEach(b=>b.classList.remove('sel'));
   el.classList.add('sel');
 }
+function setFilter(f,el){currentFilter=f;document.querySelectorAll('#filter-bar .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderTicketList();renderKanban();}
+function toggleView(){kanbanMode=!kanbanMode;document.getElementById('tkt-list-view').style.display=kanbanMode?'none':'block';document.getElementById('tkt-kanban-view').style.display=kanbanMode?'block':'none';document.getElementById('view-toggle').textContent=kanbanMode?'☰ List':'🗂 Kanban';}
+function clearAllData(){if(!confirm('Reset all demo data?'))return;localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(COUNTER_KEY);tickets=loadTickets();renderAll();showToast('Demo data restored!');}
 
-// ── TOAST ──
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2800);
-}
-
-// ── NOTIFICATIONS ──
-function showNotifications() {
-  const overdue = tickets.filter(t=>t.priority==='urgent'&&t.status==='on-hold').length;
-  const newCount = tickets.filter(t=>t.status==='new').length;
-  showToast(`${overdue} SLA breaches · ${newCount} new tickets`);
-}
-
-// ── CLEAR DATA ──
-function clearAllData() {
-  if (!confirm('Reset all demo data? This will restore seed tickets.')) return;
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(COUNTER_KEY);
-  tickets = loadTickets();
-  renderAll();
-  showToast('Demo data restored!');
-}
-
-// ── DATE ──
-function updateDate() {
-  const el = document.getElementById('dash-date');
-  if (el) el.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) + ' · All Regions';
-}
-
-// ── BOOT ──
-updateDate();
-renderAll();
+// ══════════════════════════════
+//   INIT
+// ══════════════════════════════
+// Check for existing session
+(function init() {
+  renderLoginScreen();
+  try {
+    const sess=JSON.parse(localStorage.getItem(SESSION_KEY)||'null');
+    if (sess?.userId) {
+      const user=demoUsers.find(u=>u.id===sess.userId);
+      if (user) { currentUser=user; document.getElementById('login-screen').classList.add('hidden'); document.getElementById('app-shell').classList.add('visible'); document.body.classList.add('app-active'); bootApp(); return; }
+    }
+  } catch(e){}
+  // Show login
+  document.getElementById('login-screen').style.display='flex';
+})();
 </script>
 </body>
 </html>
