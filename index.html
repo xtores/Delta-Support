@@ -1,4 +1,41 @@
 <!DOCTYPE html>
+<!--
+  DELTA FITNESS SERVICE HUB v5 — Supabase Edition
+  ═══════════════════════════════════════════════════════
+  SUPABASE SETUP — Run this SQL in your Supabase SQL Editor:
+  ═══════════════════════════════════════════════════════
+
+  create table if not exists tickets (
+    id             text primary key,
+    type           text,
+    status         text,
+    priority       text,
+    customer       text,
+    branch         text,
+    region         text,
+    equipment      text,
+    description    text,
+    assigned_to    jsonb default '[]'::jsonb,
+    scheduled_date date,
+    created_by     text,
+    visit_data     jsonb,
+    created_at     timestamptz default now(),
+    updated_at     timestamptz default now()
+  );
+
+  -- Allow all operations (anon key) for pilot phase
+  alter table tickets enable row level security;
+  create policy "pilot_all" on tickets for all using (true) with check (true);
+
+  -- Optional: auto-update updated_at
+  create or replace function touch_updated_at()
+  returns trigger language plpgsql as $$
+  begin new.updated_at = now(); return new; end;
+  $$;
+  create trigger tickets_updated_at before update on tickets
+  for each row execute procedure touch_updated_at();
+  ═══════════════════════════════════════════════════════
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -26,19 +63,44 @@ html{font-size:16px;}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;min-height:100dvh;overflow-x:hidden;}
 
 /* ════════════════════════════════════════
-   LOGIN SCREEN
+   LOGIN SCREEN — mobile-first scrollable
 ════════════════════════════════════════ */
 #login-screen{
   position:fixed;inset:0;z-index:1000;
   background:linear-gradient(135deg,var(--pd) 0%,var(--p) 50%,var(--ps) 100%);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:24px;overflow-y:auto;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  /* Remove flex centering so the card can scroll naturally */
+  display:block;
+  padding:24px 16px 40px;
 }
 #login-screen.hidden{display:none;}
+/* Centre card on desktop via margin auto */
 .login-card{
-  background:var(--sfc);border-radius:20px;width:100%;max-width:440px;
-  box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;
+  background:var(--sfc);border-radius:20px;width:100%;max-width:480px;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:visible;
+  margin:0 auto;
 }
+/* On taller screens push card to vertical centre */
+@media(min-height:800px){
+  #login-screen{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:40px;}
+}
+@media(min-width:600px){
+  #login-screen{padding:40px 24px 60px;}
+}
+/* Password row appears inside login card */
+#login-pwd-row{display:none;margin-top:14px;}
+#login-pwd-row.visible{display:block;}
+.login-pwd-input{
+  width:100%;background:var(--bg);border:1.5px solid var(--bdr);border-radius:var(--rs);
+  padding:14px;font-family:inherit;font-size:15px;color:var(--txt);outline:none;
+  transition:border-color .15s;text-align:center;letter-spacing:4px;
+  margin-bottom:6px;
+}
+.login-pwd-input:focus{border-color:var(--p);box-shadow:0 0 0 3px rgba(0,90,169,.08);}
+.login-pwd-input::placeholder{letter-spacing:0;color:var(--light);}
+.login-pwd-hint{font-size:11px;color:var(--muted);text-align:center;margin-bottom:0;}
+#login-error{display:none;background:var(--err-bg);color:var(--err);border-radius:var(--rx);padding:8px 12px;font-size:13px;font-weight:600;text-align:center;margin-top:8px;}
 .login-header{
   background:linear-gradient(135deg,var(--pd),var(--p));
   padding:28px 28px 24px;text-align:center;
@@ -448,11 +510,25 @@ body.app-active{padding-bottom:var(--bnav);}
     </div>
     <div class="login-body">
       <div class="login-note">
-        🔒 Select a demo account to log in. Each role has different permissions and menus.
+        🔒 Select an account below, then enter your password to log in.
       </div>
       <label class="login-label">Choose Your Account</label>
+      <!-- Scrollable account list — not capped, natural height -->
       <div id="user-selector"></div>
-      <button class="login-btn" id="login-btn" disabled onclick="doLogin()">
+
+      <!-- Password row — shown after account selection -->
+      <div id="login-pwd-row">
+        <label class="login-label" style="margin-top:14px;">Password</label>
+        <input class="login-pwd-input" id="login-pwd" type="password"
+               placeholder="Enter password"
+               autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')doLogin()"
+               oninput="document.getElementById('login-error').style.display='none'"/>
+        <div class="login-pwd-hint" id="login-pwd-hint">Default password = employee number</div>
+        <div id="login-error">⛔ Incorrect password. Please try again.</div>
+      </div>
+
+      <button class="login-btn" id="login-btn" disabled onclick="doLogin()" style="margin-top:16px;">
         Log In to Service Hub →
       </button>
     </div>
@@ -476,6 +552,7 @@ body.app-active{padding-bottom:var(--bnav);}
     <div class="topbar-search"><span>🔍</span><input type="text" placeholder="Search..." oninput="handleSearch(this.value)"/></div>
     <div class="topbar-right">
       <span class="role-pill-topbar" id="role-pill">—</span>
+      <button class="topbar-icon" onclick="loadFromSupabase()" title="Sync with database" id="sync-btn">🔄</button>
       <button class="topbar-icon">🔔<div class="notif-dot" id="notif-dot"></div></button>
       <button class="topbar-icon" onclick="doLogout()" title="Log out">🚪</button>
     </div>
@@ -1006,6 +1083,203 @@ body.app-active{padding-bottom:var(--bnav);}
   </div>
 </div>
 
+<!-- Supabase JS -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<script>
+'use strict';
+// ══════════════════════════════════════════════════════════════
+//   SUPABASE CONFIG
+// ══════════════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://eptihwvjbeulsjqvubgj.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_miOEZEBa_KfnuZU5s5qiFA__xSwutKE';
+const supabase      = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ══════════════════════════════════════════════════════════════
+//   DATABASE LAYER
+//   All Supabase I/O is here. The rest of the app uses tickets[]
+//   (in-memory array) and calls db.save / db.load as needed.
+// ══════════════════════════════════════════════════════════════
+const TABLE = 'tickets';
+
+const db = {
+  // ── Load all tickets (with optional filter) ──
+  async load() {
+    try {
+      const { data, error } = await supabase
+        .from(TABLE)
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      // Map DB rows → app ticket objects
+      return (data || []).map(dbRowToTicket);
+    } catch(e) {
+      console.warn('Supabase load failed, using local cache:', e.message);
+      return null; // caller will fall back to localStorage
+    }
+  },
+
+  // ── Upsert a single ticket (insert or update) ──
+  async save(ticket) {
+    try {
+      const row = ticketToDbRow(ticket);
+      const { error } = await supabase.from(TABLE).upsert(row, { onConflict: 'id' });
+      if (error) throw error;
+      // Keep local cache in sync
+      saveLocalCache(tickets);
+      return true;
+    } catch(e) {
+      console.warn('Supabase save failed:', e.message);
+      saveLocalCache(tickets); // at least persist locally
+      return false;
+    }
+  },
+
+  // ── Save visit data only (checklist) ──
+  async saveVisit(ticketId, visitData) {
+    try {
+      const { error } = await supabase.from(TABLE)
+        .update({ visit_data: visitData, updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+      if (error) throw error;
+      saveLocalCache(tickets);
+      return true;
+    } catch(e) {
+      console.warn('Supabase visit save failed:', e.message);
+      saveLocalCache(tickets);
+      return false;
+    }
+  },
+
+  // ── Update status only ──
+  async updateStatus(ticketId, status) {
+    try {
+      const { error } = await supabase.from(TABLE)
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+      if (error) throw error;
+      saveLocalCache(tickets);
+      return true;
+    } catch(e) {
+      console.warn('Supabase status update failed:', e.message);
+      return false;
+    }
+  },
+
+  // ── Update assigned_to ──
+  async updateAssignment(ticketId, assignedTo) {
+    try {
+      const { error } = await supabase.from(TABLE)
+        .update({ assigned_to: assignedTo, status: 'assigned', updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+      if (error) throw error;
+      saveLocalCache(tickets);
+      return true;
+    } catch(e) {
+      console.warn('Supabase assignment update failed:', e.message);
+      return false;
+    }
+  },
+
+  // ── Delete a ticket ──
+  async delete(ticketId) {
+    try {
+      const { error } = await supabase.from(TABLE).delete().eq('id', ticketId);
+      if (error) throw error;
+      return true;
+    } catch(e) {
+      console.warn('Supabase delete failed:', e.message);
+      return false;
+    }
+  },
+
+  // ── Generate next ticket ID from DB ──
+  async nextId() {
+    try {
+      const { data } = await supabase.from(TABLE).select('id').order('created_at', { ascending:false }).limit(1);
+      if (data && data.length) {
+        const last = parseInt((data[0].id || 'TKT-0000').replace('TKT-','')) || 0;
+        return 'TKT-' + String(last + 1).padStart(4, '0');
+      }
+    } catch(e) { /* fallback below */ }
+    return nextIdLocal();
+  }
+};
+
+// ── Mapping: app object ↔ DB row ──
+function ticketToDbRow(t) {
+  return {
+    id:           t.id,
+    type:         t.type,
+    status:       t.status,
+    priority:     t.priority,
+    customer:     t.customer,
+    branch:       t.branch,
+    region:       t.region,
+    equipment:    t.equipment || null,
+    description:  t.description || null,
+    assigned_to:  t.assignedTo || [],           // jsonb array
+    scheduled_date: t.date || null,
+    created_by:   t.createdBy || null,
+    visit_data:   t.visitData || null,          // jsonb — photos, parts, notes, sig
+    created_at:   t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
+    updated_at:   new Date().toISOString(),
+  };
+}
+
+function dbRowToTicket(row) {
+  return {
+    id:          row.id,
+    type:        row.type,
+    status:      row.status,
+    priority:    row.priority,
+    customer:    row.customer,
+    branch:      row.branch,
+    region:      row.region,
+    equipment:   row.equipment || '',
+    description: row.description || '',
+    assignedTo:  row.assigned_to || [],
+    date:        row.scheduled_date || '',
+    createdBy:   row.created_by || '',
+    visitData:   row.visit_data || null,
+    createdAt:   row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+  };
+}
+
+// ── Local cache helpers ──
+const CACHE_KEY = 'df_hub_tickets_v5_cache';
+function saveLocalCache(arr) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(arr.map(ticketToDbRow))); } catch(e){}
+}
+function loadLocalCache() {
+  try {
+    const r = localStorage.getItem(CACHE_KEY);
+    return r ? JSON.parse(r).map(dbRowToTicket) : null;
+  } catch(e) { return null; }
+}
+
+// ── Loading overlay ──
+function showDbLoading(msg) {
+  let el = document.getElementById('db-loading');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'db-loading';
+    el.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,64,128,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;backdrop-filter:blur(4px);';
+    el.innerHTML = `
+      <div style="width:44px;height:44px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;"></div>
+      <div id="db-loading-msg" style="color:#fff;font-family:Plus Jakarta Sans,sans-serif;font-size:14px;font-weight:600;letter-spacing:.3px;"></div>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
+    document.body.appendChild(el);
+  }
+  el.querySelector('#db-loading-msg').textContent = msg || 'Connecting…';
+  el.style.display = 'flex';
+}
+function hideDbLoading() {
+  const el = document.getElementById('db-loading');
+  if (el) el.style.display = 'none';
+}
+</script>
+
 <script>
 'use strict';
 // ══════════════════════════════════════════════════════════════
@@ -1024,17 +1298,20 @@ const teamOptions = [
 //   TECHNICIAN ACCOUNTS — Central list. Add new technicians here.
 // ══════════════════════════════════════════════════════════════
 const technicianAccounts = [
-  { employeeNo:'5304', name:'Naser Shah Khan', title:'Senior Technician', color:'#0d9488' },
-  { employeeNo:'3152', name:'Sandro',          title:'Senior Technician', color:'#2E75B6' },
-  { employeeNo:'6597', name:'Jose',            title:'Technician',        color:'#7c3aed' },
-  { employeeNo:'6635', name:'Belly Bellen',    title:'Technician',        color:'#d97706' },
-  { employeeNo:'6639', name:'Kenneth',         title:'Technician',        color:'#dc2626' },
-  { employeeNo:'6632', name:'Limuel Rivero',   title:'Technician',        color:'#059669' },
-  { employeeNo:'6887', name:'Mamerto Jr',      title:'Technician',        color:'#e11d48' },
-  { employeeNo:'6888', name:'Joan B. Pajarito',title:'Technician',        color:'#0284c7' },
-  { employeeNo:'6889', name:'Al Jhon V Torres',title:'Technician',        color:'#7c2d12' },
-  // Add future technicians here
+  { employeeNo:'5304', name:'Naser Shah Khan', title:'Senior Technician', color:'#0d9488', password:'5304' },
+  { employeeNo:'3152', name:'Sandro',          title:'Senior Technician', color:'#2E75B6', password:'3152' },
+  { employeeNo:'6597', name:'Jose',            title:'Technician',        color:'#7c3aed', password:'6597' },
+  { employeeNo:'6635', name:'Belly Bellen',    title:'Technician',        color:'#d97706', password:'6635' },
+  { employeeNo:'6639', name:'Kenneth',         title:'Technician',        color:'#dc2626', password:'6639' },
+  { employeeNo:'6632', name:'Limuel Rivero',   title:'Technician',        color:'#059669', password:'6632' },
+  { employeeNo:'6887', name:'Mamerto Jr',      title:'Technician',        color:'#e11d48', password:'6887' },
+  { employeeNo:'6888', name:'Joan B. Pajarito',title:'Technician',        color:'#0284c7', password:'6888' },
+  { employeeNo:'6889', name:'Al Jhon V Torres',title:'Technician',        color:'#7c2d12', password:'6889' },
+  // Add future technicians here — password defaults to employeeNo if omitted
 ];
+
+// Non-tech demo users (password = 'demo' for all)
+const NON_TECH_PASSWORDS = { u1:'demo', u2:'demo', u3:'demo', u5:'demo' };
 
 // Helper: look up a technician by employee number or name
 function getTechByEmpNo(empNo) {
@@ -1198,34 +1475,42 @@ const ROLE_CONFIG = {
 };
 
 // ── STORAGE ──
-const STORAGE_KEY = 'df_hub_tickets_v4';
+// ── STORAGE KEYS (kept for session/counter fallback) ──
+const STORAGE_KEY = 'df_hub_tickets_v4';   // legacy key — no longer primary
 const COUNTER_KEY = 'df_hub_counter_v4';
 const SESSION_KEY = 'df_hub_session_v4';
 
+// ── Local-only ID generator (fallback if DB unreachable) ──
+function nextIdLocal() {
+  const n = parseInt(localStorage.getItem(COUNTER_KEY)||'47') + 1;
+  localStorage.setItem(COUNTER_KEY, String(n));
+  return 'TKT-' + String(n).padStart(4,'0');
+}
+// nextId() is async — uses DB; defined in the DB layer above
+
+// ── In-memory ticket array (populated from Supabase on boot) ──
+function loadTickets() {
+  // Returns local cache immediately so UI isn't blank while DB loads
+  return loadLocalCache() || JSON.parse(JSON.stringify(SEED_TICKETS));
+}
+// saveTickets() is now a thin wrapper that keeps local cache in sync
+function saveTickets(arr) {
+  saveLocalCache(arr);
+}
+// ── SEED TICKETS (used only if DB is offline and cache is empty) ──
 const SEED_TICKETS = [
-  { id:'TKT-0047', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Sarah Al-Rashid', branch:'Operation Team',  region:'east',    equipment:'Treadmill — Life Fitness T5',      description:'Belt worn causing slippage.',        assignedTo:['5304'],         date:'2026-04-15', createdBy:'u3', createdAt:Date.now()-3600000 },
+  { id:'TKT-0047', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Sarah Al-Rashid', branch:'Operation Team',  region:'east',    equipment:'Treadmill — Life Fitness T5',      description:'Belt worn causing slippage.',        assignedTo:['5304'],              date:'2026-04-15', createdBy:'u3', createdAt:Date.now()-3600000 },
   { id:'TKT-0046', type:'installation', status:'assigned',    priority:'normal', customer:'Khalid Ibrahim',  branch:'Consumer Team',   region:'central', equipment:'Squat Rack × 4 — Hammer Strength', description:'New equipment installation.',        assignedTo:['5304','3152','6597'], date:'2026-04-16', createdBy:'u1', createdAt:Date.now()-7200000 },
-  { id:'TKT-0045', type:'spare-parts',  status:'on-hold',     priority:'urgent', customer:'Fatima Hassan',   branch:'Operation Team',  region:'east',    equipment:'Elliptical — Precor EFX 885',      description:'Console board failure.',            assignedTo:['3152'],         date:'2026-04-14', createdBy:'u2', createdAt:Date.now()-86400000 },
-  { id:'TKT-0044', type:'amc',          status:'new',         priority:'normal', customer:'Omar Al-Sayed',   branch:'Sales Team',      region:'west',    equipment:'Full Gym — AMC Renewal',           description:'Annual contract renewal.',          assignedTo:['6635'],         date:'2026-04-18', createdBy:'u3', createdAt:Date.now()-172800000 },
-  { id:'TKT-0043', type:'maintenance',  status:'completed',   priority:'normal', customer:'Nora Abdullah',   branch:'Consumer Team',   region:'central', equipment:'Cable Machine — Cybex VR3',        description:'Quarterly PM service completed.',   assignedTo:['6597'],         date:'2026-04-12', createdBy:'u1', createdAt:Date.now()-259200000 },
+  { id:'TKT-0045', type:'spare-parts',  status:'on-hold',     priority:'urgent', customer:'Fatima Hassan',   branch:'Operation Team',  region:'east',    equipment:'Elliptical — Precor EFX 885',      description:'Console board failure.',            assignedTo:['3152'],              date:'2026-04-14', createdBy:'u2', createdAt:Date.now()-86400000 },
+  { id:'TKT-0044', type:'amc',          status:'new',         priority:'normal', customer:'Omar Al-Sayed',   branch:'Sales Team',      region:'west',    equipment:'Full Gym — AMC Renewal',           description:'Annual contract renewal.',          assignedTo:['6635'],              date:'2026-04-18', createdBy:'u3', createdAt:Date.now()-172800000 },
+  { id:'TKT-0043', type:'maintenance',  status:'completed',   priority:'normal', customer:'Nora Abdullah',   branch:'Consumer Team',   region:'central', equipment:'Cable Machine — Cybex VR3',        description:'Quarterly PM service completed.',   assignedTo:['6597'],              date:'2026-04-12', createdBy:'u1', createdAt:Date.now()-259200000 },
   { id:'TKT-0041', type:'installation', status:'on-hold',     priority:'urgent', customer:'Ahmed Fouad',     branch:'Operation Team',  region:'east',    equipment:'Treadmill Bank × 8 — NordicTrack', description:'SLA breached — awaiting site prep.',assignedTo:['5304','6632','6639'], date:'2026-04-10', createdBy:'u3', createdAt:Date.now()-345600000 },
-  { id:'TKT-0039', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Layla Mustafa',   branch:'Consumer Team',   region:'east',    equipment:'Rowing Machines × 6 — Concept2',  description:'Bearing replacement needed.',       assignedTo:['6887','6888'],  date:'2026-04-15', createdBy:'u2', createdAt:Date.now()-432000000 },
-  { id:'TKT-0036', type:'amc',          status:'completed',   priority:'normal', customer:'Hassan Khalil',   branch:'Sales Team',      region:'east',    equipment:'Cardio Zone — Full AMC',           description:'AMC activation completed.',         assignedTo:['6889'],         date:'2026-04-08', createdBy:'u1', createdAt:Date.now()-518400000 },
+  { id:'TKT-0039', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Layla Mustafa',   branch:'Consumer Team',   region:'east',    equipment:'Rowing Machines × 6 — Concept2',  description:'Bearing replacement needed.',       assignedTo:['6887','6888'],       date:'2026-04-15', createdBy:'u2', createdAt:Date.now()-432000000 },
+  { id:'TKT-0036', type:'amc',          status:'completed',   priority:'normal', customer:'Hassan Khalil',   branch:'Sales Team',      region:'east',    equipment:'Cardio Zone — Full AMC',           description:'AMC activation completed.',         assignedTo:['6889'],              date:'2026-04-08', createdBy:'u1', createdAt:Date.now()-518400000 },
 ];
 
-function loadTickets() {
-  try { const r = localStorage.getItem(STORAGE_KEY); if(r) return JSON.parse(r); } catch(e){}
-  const s = JSON.parse(JSON.stringify(SEED_TICKETS));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  return s;
-}
-function saveTickets(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
-function getCounter() { return parseInt(localStorage.getItem(COUNTER_KEY)||'47'); }
-function setCounter(n) { localStorage.setItem(COUNTER_KEY, String(n)); }
-function nextId() { const n=getCounter()+1; setCounter(n); return 'TKT-'+String(n).padStart(4,'0'); }
-
 // ── APP STATE ──
-let tickets = loadTickets();
+let tickets = loadTickets(); // starts with local cache; refreshed from Supabase after boot
 let currentUser = null;
 let currentFilter = 'all';
 let currentSearch = '';
@@ -1283,45 +1568,88 @@ let selectedUserId = null;
 
 function renderLoginScreen() {
   const sel = document.getElementById('user-selector');
-  const roleTagMap = {
-    requester_consumer:'role-tag-req_c', requester_commercial:'role-tag-req_com',
-    technical_manager:'role-tag-mgr', technician:'role-tag-tech', admin:'role-tag-admin'
-  };
-
-  // Group: management/admin roles first, then technicians
-  const mgmtUsers  = demoUsers.filter(u => u.role !== 'technician');
+  const mgmtUsers = demoUsers.filter(u => u.role !== 'technician');
   const techUsers  = demoUsers.filter(u => u.role === 'technician');
 
   const renderCard = u => `
     <div class="user-card" id="uc-${u.id}" onclick="selectUser('${u.id}')">
-      <div class="user-card-avatar" style="background:${u.color}">${u.avatar}</div>
+      <div class="user-card-avatar" style="background:${u.color};width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;color:#fff;flex-shrink:0;">${u.avatar}</div>
       <div style="flex:1;min-width:0;">
-        <div class="user-card-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.roleLabel}</div>
-        <div class="user-card-email">${u.email}</div>
+        <div class="user-card-name" style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.roleLabel}</div>
+        <div class="user-card-email" style="font-size:11px;color:var(--muted);margin-top:1px;">${u.email}</div>
       </div>
+      ${u.role === 'technician'
+        ? `<div style="font-size:10px;font-weight:700;padding:3px 7px;border-radius:10px;background:var(--ok-bg);color:var(--ok);white-space:nowrap;flex-shrink:0;">${u.title||'Tech'}</div>`
+        : `<div style="font-size:10px;font-weight:700;padding:3px 7px;border-radius:10px;background:var(--warn-bg);color:var(--warn);white-space:nowrap;flex-shrink:0;">${ROLE_CONFIG[u.role]?.label||'User'}</div>`}
     </div>`;
 
   sel.innerHTML =
-    // Management / admin group
-    `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);padding:4px 2px 6px;">Management & Admin</div>` +
+    `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);padding:4px 2px 8px;">Management & Admin</div>` +
     mgmtUsers.map(renderCard).join('') +
-    // Divider
-    `<div style="height:1px;background:var(--bdr);margin:12px 0 8px;"></div>
-     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);padding:0 2px 6px;">Field Technicians</div>` +
+    `<div style="height:1px;background:var(--bdr);margin:14px 0 10px;"></div>
+     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);padding:0 2px 8px;">Field Technicians (${techUsers.length})</div>` +
     techUsers.map(renderCard).join('');
 }
 
 function selectUser(id) {
   selectedUserId = id;
   document.querySelectorAll('.user-card').forEach(c => c.classList.remove('selected'));
-  document.getElementById('uc-'+id).classList.add('selected');
+  document.getElementById('uc-'+id)?.classList.add('selected');
+
+  // Show password row for all users
+  const pwdRow  = document.getElementById('login-pwd-row');
+  const pwdHint = document.getElementById('login-pwd-hint');
+  const pwdInput = document.getElementById('login-pwd');
+  const errEl   = document.getElementById('login-error');
+
+  pwdRow.classList.add('visible');
+  errEl.style.display = 'none';
+  pwdInput.value = '';
+
+  const user = demoUsers.find(u=>u.id===id);
+  if (user?.role === 'technician') {
+    pwdHint.textContent = `Default password for ${user.employeeNo}: use employee number`;
+  } else {
+    pwdHint.textContent = 'Demo password: demo';
+  }
+
   document.getElementById('login-btn').disabled = false;
+
+  // Scroll the password row into view on mobile
+  setTimeout(() => pwdInput.scrollIntoView({behavior:'smooth',block:'center'}), 150);
+  setTimeout(() => pwdInput.focus(), 200);
 }
 
 function doLogin() {
   if (!selectedUserId) return;
-  const user = demoUsers.find(u=>u.id===selectedUserId);
+  const user   = demoUsers.find(u=>u.id===selectedUserId);
   if (!user) return;
+
+  const pwdInput = document.getElementById('login-pwd');
+  const entered  = pwdInput.value.trim();
+  const errEl    = document.getElementById('login-error');
+
+  // Validate password
+  let correct = false;
+  if (user.role === 'technician') {
+    const tech = getTechByEmpNo(user.employeeNo);
+    const expected = tech?.password || user.employeeNo;
+    correct = entered === expected;
+  } else {
+    const expected = NON_TECH_PASSWORDS[user.id] || 'demo';
+    correct = entered === expected;
+  }
+
+  if (!correct) {
+    errEl.textContent = `⛔ Incorrect password. Try "${user.role === 'technician' ? user.employeeNo : 'demo'}"`;
+    errEl.style.display = 'block';
+    pwdInput.focus();
+    pwdInput.select();
+    return;
+  }
+
+  // Successful login
+  errEl.style.display = 'none';
   currentUser = user;
   localStorage.setItem(SESSION_KEY, JSON.stringify({userId:user.id}));
   document.getElementById('login-screen').classList.add('hidden');
@@ -1334,11 +1662,17 @@ function doLogout() {
   localStorage.removeItem(SESSION_KEY);
   currentUser = null;
   selectedUserId = null;
+  // Reset login form
+  document.querySelectorAll('.user-card').forEach(c=>c.classList.remove('selected'));
+  document.getElementById('login-pwd').value = '';
+  document.getElementById('login-pwd-row').classList.remove('visible');
+  document.getElementById('login-error').style.display = 'none';
+  document.getElementById('login-btn').disabled = true;
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-shell').classList.remove('visible');
   document.body.classList.remove('app-active');
-  document.querySelectorAll('.user-card').forEach(c=>c.classList.remove('selected'));
-  document.getElementById('login-btn').disabled = true;
+  // Scroll login screen back to top
+  document.getElementById('login-screen').scrollTop = 0;
 }
 
 // ══════════════════════════════
@@ -1352,33 +1686,30 @@ function bootApp() {
   document.getElementById('menu-avatar').style.background = currentUser.color;
   document.getElementById('menu-user-name').textContent = currentUser.name;
   document.getElementById('menu-user-role').textContent = currentUser.roleLabel;
-  // Build menu
+  // Build menu + nav
   buildMenu(cfg);
-  // Build bottom nav
   buildBottomNav(cfg);
   // Set date
   document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   // Populate team dropdowns
   populateTeamDropdown('f-branch');
   populateTeamDropdown('cr-branch');
-  // Initial page
+  // Show initial page
   const firstPage = cfg.pages[0];
   goPage(firstPage);
-  // Hide "New Ticket" button for technicians
+  // UI visibility by role
   const newBtn = document.getElementById('dash-new-btn');
   if (newBtn) newBtn.style.display = cfg.canCreateRequest ? '' : 'none';
-  // Assign-to field: hide for non-managers
   const techGroup = document.getElementById('f-tech-group');
   if (techGroup) techGroup.style.display = cfg.canAssign ? '' : 'none';
-  // AMC new button: only for manager/admin
-  const amcNew = document.getElementById('amc-new-btn');
-  if (amcNew) amcNew.style.display = cfg.canManageAMC ? '' : 'none';
-  const amcManage = document.getElementById('amc-manage-btn');
-  if (amcManage) amcManage.style.display = cfg.canManageAMC ? '' : 'none';
-  const amcRenew = document.getElementById('amc-renew-btn');
-  if (amcRenew) amcRenew.style.display = cfg.canManageAMC ? '' : 'none';
-  // Render all
+  ['amc-new-btn','amc-manage-btn','amc-renew-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = cfg.canManageAMC ? '' : 'none';
+  });
+  // Render immediately with cached data so UI isn't blank
   renderAll();
+  // Then load fresh data from Supabase in the background
+  loadFromSupabase();
 }
 
 function buildMenu(cfg) {
@@ -1844,63 +2175,112 @@ function startTechVisit(id) {
   const t = tickets.find(x=>x.id===id);
   if (!t) return;
   t.status = 'in-progress';
-  resetVisitData();
-  visitData._forTicket = id;
-  const teamArr = getAssignedArr(t);
-  const teamNames = teamArr.map(e => techDisplayName(e)).join(', ');
+  // Persist to Supabase
+  db.updateStatus(t.id, 'in-progress');
+  // Ensure ticket has a visitData object (shared across all assigned techs)
+  if (!t.visitData) t.visitData = EMPTY_VISIT();
+  saveTickets(tickets);
+  const vd = t.visitData;
+  const teamArr   = getAssignedArr(t);
   const isTeamJob = teamArr.length > 1;
-  document.getElementById('av-id').textContent = `${t.id} · ACTIVE VISIT`;
+  document.getElementById('av-id').textContent   = `${t.id} · ACTIVE VISIT`;
   document.getElementById('av-title').textContent = t.equipment || 'Visit';
-  document.getElementById('av-loc').textContent = `📍 ${t.branch} · ${t.customer}`;
-  document.getElementById('av-sub').textContent = isTeamJob
-    ? `Team job · ${teamArr.length} technicians assigned`
+  document.getElementById('av-loc').textContent   = `📍 ${t.branch} · ${t.customer}`;
+  document.getElementById('av-sub').textContent   = isTeamJob
+    ? `Team job · ${teamArr.length} technicians · ${vd.updatedByName ? 'Last: '+vd.updatedByName : 'No updates yet'}`
     : 'Job actions checklist';
-  // Reset checklist UI
+  // Reset checklist UI then sync from saved data
   techCheckState = {checkin:true,before:false,parts:false,notes:false,after:false,sig:false};
-  ['before','parts','notes','after','sig'].forEach(k => markChecklistPending(k, {before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'}[k]));
+  syncChecklistUI(vd);
   renderAll();
   goPage('active-visit');
-  showToast(`Visit started for ${t.id}${isTeamJob?' · Team: '+teamNames:''}`);
+  showToast(`Visit started for ${t.id}${isTeamJob?' · Team job — data shared':''}`);
 }
 
 // ══════════════════════════════════════════════════════
 //   CHECKLIST MODAL ENGINE
 // ══════════════════════════════════════════════════════
 
-// Checklist data store (per visit)
-let visitData = {
-  beforePhotos: [],   // array of {dataUrl, name}
-  afterPhotos:  [],
-  parts:        [],   // array of {name, qty, unit, remarks}
-  notes:        {issue:'', action:'', rec:'', completion:''},
-  signature:    null, // dataURL
-  sigName:      '',
-};
-let currentPhotoType = 'before'; // 'before' or 'after'
+// ══════════════════════════════════════════════════════
+//   SHARED VISIT DATA ENGINE
+//   Data lives ON the ticket — all assigned techs share it.
+// ══════════════════════════════════════════════════════
+
+let currentPhotoType = 'before';
 let sigCanvas = null, sigCtx = null, sigDrawing = false, sigHasData = false;
+
+const EMPTY_VISIT = () => ({
+  beforePhotos: [], afterPhotos: [],
+  parts: [],
+  notes: { issue:'', action:'', rec:'', completion:'' },
+  signature: null, sigName: '',
+  updatedBy: null, updatedAt: null, updatedByName: '',
+});
+
+function getTicketVisit(ticketId) {
+  const t = tickets.find(x => x.id === ticketId);
+  if (!t) return EMPTY_VISIT();
+  if (!t.visitData) t.visitData = EMPTY_VISIT();
+  return t.visitData;
+}
+function activeVisit() { return getTicketVisit(activeTechJobId); }
+
+function stampEdit(vd) {
+  vd.updatedBy     = currentUser?.employeeNo || currentUser?.id || 'unknown';
+  vd.updatedByName = currentUser?.name || 'Unknown';
+  vd.updatedAt     = Date.now();
+  saveTickets(tickets);
+}
+
+// Proxy shim so old code using visitData.x still works
+const visitData = new Proxy({}, {
+  get: (_, k) => activeTechJobId ? getTicketVisit(activeTechJobId)[k] : EMPTY_VISIT()[k],
+  set: (_, k, v) => { if(activeTechJobId){ getTicketVisit(activeTechJobId)[k] = v; saveTickets(tickets); } return true; }
+});
 
 // ── MARK CHECKLIST ITEM DONE ──
 function markChecklistDone(key, subtitle) {
-  const row = document.getElementById('act-'+key);
+  const row  = document.getElementById('act-'+key);
   const chev = document.getElementById('act-'+key+'-chev');
-  const sub = document.getElementById('act-'+key+'-sub');
-  if (row) row.classList.add('done');
+  const sub  = document.getElementById('act-'+key+'-sub');
+  if (row)  row.classList.add('done');
   if (chev) { chev.textContent='✅'; chev.style.fontSize='20px'; }
   if (sub && subtitle) sub.textContent = subtitle;
   techCheckState[key] = true;
 }
 function markChecklistPending(key, subtitle) {
-  const row = document.getElementById('act-'+key);
+  const row  = document.getElementById('act-'+key);
   const chev = document.getElementById('act-'+key+'-chev');
-  const sub = document.getElementById('act-'+key+'-sub');
-  if (row) row.classList.remove('done');
+  const sub  = document.getElementById('act-'+key+'-sub');
+  if (row)  row.classList.remove('done');
   if (chev) { chev.textContent='›'; chev.style.fontSize='18px'; chev.style.color='var(--muted)'; }
   if (sub && subtitle) sub.textContent = subtitle;
   techCheckState[key] = false;
 }
 
+// Sync checklist UI from ticket's stored visit data
+function syncChecklistUI(vd) {
+  const d = {before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'};
+  if (vd.beforePhotos?.length) markChecklistDone('before', `${vd.beforePhotos.length} photo${vd.beforePhotos.length!==1?'s':''} · tap to edit`);
+  else markChecklistPending('before', d.before);
+  if (vd.parts?.length) markChecklistDone('parts', `${vd.parts.length} item${vd.parts.length!==1?'s':''} logged · tap to edit`);
+  else markChecklistPending('parts', d.parts);
+  if (vd.notes?.issue || vd.notes?.action) markChecklistDone('notes', 'Notes saved · tap to edit');
+  else markChecklistPending('notes', d.notes);
+  if (vd.afterPhotos?.length) markChecklistDone('after', `${vd.afterPhotos.length} photo${vd.afterPhotos.length!==1?'s':''} · tap to edit`);
+  else markChecklistPending('after', d.after);
+  if (vd.signature) markChecklistDone('sig', vd.sigName ? `Signed by ${vd.sigName} · tap to edit` : 'Signed · tap to edit');
+  else markChecklistPending('sig', d.sig);
+  // Audit line
+  if (vd.updatedByName && vd.updatedAt) {
+    const sub = document.getElementById('av-sub');
+    if (sub) sub.textContent = `Last updated by ${vd.updatedByName} · ${new Date(vd.updatedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
+  }
+}
+
 // ── OPEN CORRECT MODAL ──
 function openChecklistModal(key) {
+  const vd = activeVisit();
   if (key === 'before' || key === 'after') {
     currentPhotoType = key;
     document.getElementById('photos-modal-title').textContent = key === 'before' ? 'Before Photos' : 'After Photos';
@@ -1908,39 +2288,39 @@ function openChecklistModal(key) {
     openModal('photos-modal');
   } else if (key === 'parts') {
     renderPartsList();
-    document.getElementById('part-name').value = '';
-    document.getElementById('part-qty').value = '1';
-    document.getElementById('part-remarks').value = '';
+    document.getElementById('part-name').value   = '';
+    document.getElementById('part-qty').value    = '1';
+    document.getElementById('part-remarks').value= '';
     openModal('parts-modal');
   } else if (key === 'notes') {
-    const n = visitData.notes;
-    document.getElementById('note-issue').value = n.issue || '';
-    document.getElementById('note-action').value = n.action || '';
-    document.getElementById('note-rec').value = n.rec || '';
+    const n = vd.notes || {};
+    document.getElementById('note-issue').value      = n.issue      || '';
+    document.getElementById('note-action').value     = n.action     || '';
+    document.getElementById('note-rec').value        = n.rec        || '';
     document.getElementById('note-completion').value = n.completion || '';
     openModal('notes-modal');
   } else if (key === 'sig') {
     openModal('sig-modal');
     setTimeout(initSignatureCanvas, 100);
-    // Restore saved sig if exists
-    if (visitData.signature) {
+    if (vd.signature) {
       const preview = document.getElementById('sig-saved-preview');
-      const img = document.getElementById('sig-preview-img');
+      const img     = document.getElementById('sig-preview-img');
       if (preview) preview.style.display = 'block';
-      if (img) img.src = visitData.signature;
-      document.getElementById('sig-customer-name').value = visitData.sigName || '';
+      if (img)     img.src = vd.signature;
+      document.getElementById('sig-customer-name').value = vd.sigName || '';
     }
   }
 }
 
 // ══════════════════════════════════════════════════
-//   PHOTO UPLOAD
+//   PHOTO UPLOAD (reads/writes directly to ticket)
 // ══════════════════════════════════════════════════
 
 function handlePhotoUpload(event) {
   const files = Array.from(event.target.files);
   if (!files.length) return;
-  const arr = currentPhotoType === 'before' ? visitData.beforePhotos : visitData.afterPhotos;
+  const vd  = activeVisit();
+  const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
   let loaded = 0;
   files.forEach(file => {
     const reader = new FileReader();
@@ -1951,13 +2331,14 @@ function handlePhotoUpload(event) {
     };
     reader.readAsDataURL(file);
   });
-  event.target.value = ''; // reset input so same file can be re-selected
+  event.target.value = '';
 }
 
 function renderPhotoGrid() {
-  const arr = currentPhotoType === 'before' ? visitData.beforePhotos : visitData.afterPhotos;
-  const grid = document.getElementById('photo-preview-grid');
-  const empty = document.getElementById('photo-empty-hint');
+  const vd  = activeVisit();
+  const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
+  const grid    = document.getElementById('photo-preview-grid');
+  const empty   = document.getElementById('photo-empty-hint');
   const countEl = document.getElementById('photos-modal-count');
   if (countEl) countEl.textContent = `${arr.length} photo${arr.length!==1?'s':''} added`;
   if (!arr.length) {
@@ -1971,27 +2352,29 @@ function renderPhotoGrid() {
       <img src="${p.dataUrl}" alt="Photo ${i+1}"/>
       <button class="photo-thumb-del" onclick="deletePhoto(${i})" title="Remove">✕</button>
     </div>`).join('') +
-    // Add more button
     `<label class="photo-add-btn" for="${currentPhotoType==='before'?'photo-file-input':'photo-file-input2'}">
       <span>➕</span><span>Add more</span>
     </label>`;
 }
 
-// Second hidden input for "add more" within the preview grid
 function deletePhoto(idx) {
-  const arr = currentPhotoType === 'before' ? visitData.beforePhotos : visitData.afterPhotos;
+  const vd  = activeVisit();
+  const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
   arr.splice(idx, 1);
   renderPhotoGrid();
 }
 
 function savePhotos() {
-  const arr = currentPhotoType === 'before' ? visitData.beforePhotos : visitData.afterPhotos;
+  const vd  = activeVisit();
+  const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
   const count = arr.length;
-  const label = currentPhotoType === 'before' ? 'before' : 'after';
   if (!count) { showToast('Please add at least one photo'); return; }
+  stampEdit(vd);
   closeModal('photos-modal');
-  markChecklistDone(currentPhotoType, `${count} photo${count!==1?'s':''} uploaded`);
-  showToast(`✅ ${count} ${label} photo${count!==1?'s':''} saved`);
+  markChecklistDone(currentPhotoType, `${count} photo${count!==1?'s':''} · tap to edit`);
+  showToast(`✅ ${count} ${currentPhotoType} photo${count!==1?'s':''} saved`);
+  // Persist visit data to Supabase (fire and forget — photos can be large)
+  if (activeTechJobId) db.saveVisit(activeTechJobId, vd);
 }
 
 // ══════════════════════════════════════════════════
@@ -1999,9 +2382,9 @@ function savePhotos() {
 // ══════════════════════════════════════════════════
 
 function addPartItem() {
-  const name = document.getElementById('part-name').value.trim();
-  const qty = parseInt(document.getElementById('part-qty').value) || 1;
-  const unit = document.getElementById('part-unit').value;
+  const name    = document.getElementById('part-name').value.trim();
+  const qty     = parseInt(document.getElementById('part-qty').value) || 1;
+  const unit    = document.getElementById('part-unit').value;
   const remarks = document.getElementById('part-remarks').value.trim();
   if (!name) {
     document.getElementById('part-name').style.borderColor = 'var(--err)';
@@ -2009,9 +2392,9 @@ function addPartItem() {
     return;
   }
   document.getElementById('part-name').style.borderColor = '';
-  visitData.parts.push({ name, qty, unit, remarks });
-  document.getElementById('part-name').value = '';
-  document.getElementById('part-qty').value = '1';
+  activeVisit().parts.push({ name, qty, unit, remarks });
+  document.getElementById('part-name').value    = '';
+  document.getElementById('part-qty').value     = '1';
   document.getElementById('part-remarks').value = '';
   renderPartsList();
   document.getElementById('part-name').focus();
@@ -2019,37 +2402,41 @@ function addPartItem() {
 }
 
 function deletePart(idx) {
-  visitData.parts.splice(idx, 1);
+  activeVisit().parts.splice(idx, 1);
   renderPartsList();
 }
 
 function renderPartsList() {
+  const vd        = activeVisit();
   const container = document.getElementById('parts-list-container');
-  const empty = document.getElementById('parts-empty');
-  const countEl = document.getElementById('parts-count-label');
-  if (countEl) countEl.textContent = `${visitData.parts.length} item${visitData.parts.length!==1?'s':''} logged`;
-  if (!visitData.parts.length) {
+  const empty     = document.getElementById('parts-empty');
+  const countEl   = document.getElementById('parts-count-label');
+  if (countEl) countEl.textContent = `${vd.parts.length} item${vd.parts.length!==1?'s':''} logged`;
+  if (!vd.parts.length) {
     container.innerHTML = '';
     if (empty) empty.style.display = 'block';
     return;
   }
   if (empty) empty.style.display = 'none';
-  container.innerHTML = visitData.parts.map((p, i) => `
+  container.innerHTML = vd.parts.map((p, i) => `
     <div class="part-item">
       <div class="part-item-info">
         <div class="part-item-name">${p.name}</div>
-        <div class="part-item-meta">Qty: ${p.qty} ${p.unit}${p.remarks ? ' · ' + p.remarks : ''}</div>
+        <div class="part-item-meta">Qty: ${p.qty} ${p.unit}${p.remarks?' · '+p.remarks:''}</div>
       </div>
       <button class="part-item-del" onclick="deletePart(${i})" title="Remove">🗑</button>
     </div>`).join('');
 }
 
 function saveParts() {
-  const count = visitData.parts.length;
+  const vd    = activeVisit();
+  const count = vd.parts.length;
   if (!count) { showToast('Please add at least one part'); return; }
+  stampEdit(vd);
   closeModal('parts-modal');
-  markChecklistDone('parts', `${count} item${count!==1?'s':''} logged`);
+  markChecklistDone('parts', `${count} item${count!==1?'s':''} logged · tap to edit`);
   showToast(`✅ ${count} part${count!==1?'s':''} saved`);
+  if (activeTechJobId) db.saveVisit(activeTechJobId, vd);
 }
 
 // ══════════════════════════════════════════════════
@@ -2057,16 +2444,19 @@ function saveParts() {
 // ══════════════════════════════════════════════════
 
 function saveNotes() {
-  const issue = document.getElementById('note-issue').value.trim();
-  const action = document.getElementById('note-action').value.trim();
-  const rec = document.getElementById('note-rec').value.trim();
+  const issue      = document.getElementById('note-issue').value.trim();
+  const action     = document.getElementById('note-action').value.trim();
+  const rec        = document.getElementById('note-rec').value.trim();
   const completion = document.getElementById('note-completion').value.trim();
-  if (!issue && !action) { showToast('Please fill in at least Issue Found or Action Taken'); return; }
-  visitData.notes = { issue, action, rec, completion };
+  if (!issue && !action) { showToast('Please fill in Issue Found or Action Taken'); return; }
+  const vd   = activeVisit();
+  vd.notes   = { issue, action, rec, completion };
   const filled = [issue, action, rec, completion].filter(Boolean).length;
+  stampEdit(vd);
   closeModal('notes-modal');
-  markChecklistDone('notes', `${filled} field${filled!==1?'s':''} saved`);
+  markChecklistDone('notes', `${filled} field${filled!==1?'s':''} saved · tap to edit`);
   showToast('✅ Work notes saved');
+  if (activeTechJobId) db.saveVisit(activeTechJobId, vd);
 }
 
 // ══════════════════════════════════════════════════
@@ -2076,53 +2466,47 @@ function saveNotes() {
 function initSignatureCanvas() {
   sigCanvas = document.getElementById('sig-canvas');
   if (!sigCanvas) return;
-  // Set canvas resolution to match display size
   const rect = sigCanvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  sigCanvas.width = rect.width * dpr;
+  const dpr  = window.devicePixelRatio || 1;
+  sigCanvas.width  = rect.width  * dpr;
   sigCanvas.height = sigCanvas.offsetHeight * dpr;
   sigCtx = sigCanvas.getContext('2d');
   sigCtx.scale(dpr, dpr);
   sigCtx.strokeStyle = '#1a2332';
-  sigCtx.lineWidth = 2.5;
-  sigCtx.lineCap = 'round';
-  sigCtx.lineJoin = 'round';
+  sigCtx.lineWidth   = 2.5;
+  sigCtx.lineCap     = 'round';
+  sigCtx.lineJoin    = 'round';
   sigHasData = false;
   document.getElementById('sig-status').textContent = 'Not signed';
-  document.getElementById('sig-status').style.color = 'var(--muted)';
-
-  // Touch events
-  sigCanvas.addEventListener('touchstart', sigTouchStart, { passive: false });
-  sigCanvas.addEventListener('touchmove', sigTouchMove, { passive: false });
-  sigCanvas.addEventListener('touchend', sigTouchEnd, { passive: false });
-  // Mouse events (desktop)
-  sigCanvas.addEventListener('mousedown', sigMouseDown);
-  sigCanvas.addEventListener('mousemove', sigMouseMove);
-  sigCanvas.addEventListener('mouseup', sigMouseUp);
+  document.getElementById('sig-status').style.color  = 'var(--muted)';
+  sigCanvas.addEventListener('touchstart', sigTouchStart, { passive:false });
+  sigCanvas.addEventListener('touchmove',  sigTouchMove,  { passive:false });
+  sigCanvas.addEventListener('touchend',   sigTouchEnd,   { passive:false });
+  sigCanvas.addEventListener('mousedown',  sigMouseDown);
+  sigCanvas.addEventListener('mousemove',  sigMouseMove);
+  sigCanvas.addEventListener('mouseup',    sigMouseUp);
   sigCanvas.addEventListener('mouseleave', sigMouseUp);
-
-  // If there's a saved sig, render it
-  if (visitData.signature) {
+  const vd = activeVisit();
+  if (vd.signature) {
     const img = new Image();
     img.onload = () => sigCtx.drawImage(img, 0, 0, rect.width, sigCanvas.offsetHeight);
-    img.src = visitData.signature;
+    img.src    = vd.signature;
     sigHasData = true;
     updateSigStatus();
   }
 }
 
 function getSigPos(e) {
-  const rect = sigCanvas.getBoundingClientRect();
+  const rect  = sigCanvas.getBoundingClientRect();
   const touch = e.touches ? e.touches[0] : e;
   return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
 }
-
-function sigTouchStart(e) { e.preventDefault(); sigDrawing=true; const p=getSigPos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); hideSigPlaceholder(); }
-function sigTouchMove(e)  { e.preventDefault(); if(!sigDrawing)return; const p=getSigPos(e); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); sigHasData=true; updateSigStatus(); }
-function sigTouchEnd(e)   { e.preventDefault(); sigDrawing=false; }
-function sigMouseDown(e)  { sigDrawing=true; const p=getSigPos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); hideSigPlaceholder(); }
-function sigMouseMove(e)  { if(!sigDrawing)return; const p=getSigPos(e); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); sigHasData=true; updateSigStatus(); }
-function sigMouseUp()     { sigDrawing=false; }
+function sigTouchStart(e){ e.preventDefault(); sigDrawing=true; const p=getSigPos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); hideSigPlaceholder(); }
+function sigTouchMove(e) { e.preventDefault(); if(!sigDrawing)return; const p=getSigPos(e); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); sigHasData=true; updateSigStatus(); }
+function sigTouchEnd(e)  { e.preventDefault(); sigDrawing=false; }
+function sigMouseDown(e) { sigDrawing=true; const p=getSigPos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); hideSigPlaceholder(); }
+function sigMouseMove(e) { if(!sigDrawing)return; const p=getSigPos(e); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); sigHasData=true; updateSigStatus(); }
+function sigMouseUp()    { sigDrawing=false; }
 
 function hideSigPlaceholder() {
   const ph = document.getElementById('sig-placeholder');
@@ -2130,7 +2514,7 @@ function hideSigPlaceholder() {
 }
 function updateSigStatus() {
   const el = document.getElementById('sig-status');
-  if (el && sigHasData) { el.textContent = '✅ Signed'; el.style.color = 'var(--ok)'; }
+  if (el && sigHasData) { el.textContent='✅ Signed'; el.style.color='var(--ok)'; }
 }
 
 function clearSignature() {
@@ -2141,8 +2525,7 @@ function clearSignature() {
   const ph = document.getElementById('sig-placeholder');
   if (ph) ph.style.display = 'flex';
   const el = document.getElementById('sig-status');
-  if (el) { el.textContent = 'Not signed'; el.style.color = 'var(--muted)'; }
-  // Clear saved preview
+  if (el) { el.textContent='Not signed'; el.style.color='var(--muted)'; }
   const preview = document.getElementById('sig-saved-preview');
   if (preview) preview.style.display = 'none';
 }
@@ -2150,49 +2533,59 @@ function clearSignature() {
 function saveSignature() {
   if (!sigHasData) { showToast('Please ask customer to sign first'); return; }
   const name = document.getElementById('sig-customer-name').value.trim();
-  visitData.signature = sigCanvas.toDataURL('image/png');
-  visitData.sigName = name;
-  // Show saved preview in modal
+  const vd   = activeVisit();
+  vd.signature = sigCanvas.toDataURL('image/png');
+  vd.sigName   = name;
+  stampEdit(vd);
   const preview = document.getElementById('sig-saved-preview');
-  const img = document.getElementById('sig-preview-img');
+  const img     = document.getElementById('sig-preview-img');
   if (preview) preview.style.display = 'block';
-  if (img) img.src = visitData.signature;
+  if (img)     img.src = vd.signature;
   closeModal('sig-modal');
-  markChecklistDone('sig', name ? `Signed by ${name}` : 'Signature captured');
+  markChecklistDone('sig', name ? `Signed by ${name} · tap to edit` : 'Signed · tap to edit');
   showToast('✅ Signature saved');
+  if (activeTechJobId) db.saveVisit(activeTechJobId, vd);
 }
 
-// ── RESET VISIT DATA ──
-function resetVisitData() {
-  visitData = { beforePhotos:[], afterPhotos:[], parts:[], notes:{issue:'',action:'',rec:'',completion:''}, signature:null, sigName:'' };
-  // Remove event listeners from canvas
+// ── RESET VISIT UI (does NOT wipe ticket data) ──
+function resetVisitUI() {
   if (sigCanvas) {
     sigCanvas.replaceWith(sigCanvas.cloneNode(false));
     sigCanvas = null; sigCtx = null;
   }
 }
 
-function techAction(key) { /* legacy stub - now handled by openChecklistModal */ }
+function techAction(key) { /* legacy stub */ }
 
 function closeTechVisit() {
   if (!activeTechJobId) { showToast('No active visit'); return; }
-  // Check all items done
-  const keys = ['before','parts','notes','after','sig'];
+  const keys    = ['before','parts','notes','after','sig'];
   const doneCnt = keys.filter(k=>techCheckState[k]).length;
   if (doneCnt < 3) {
-    if (!confirm(`${5-doneCnt} checklist items not completed. Close visit anyway?`)) return;
-  } else if (!confirm(`Close visit for ${activeTechJobId}?`)) return;
+    if (!confirm(`${5-doneCnt} checklist item${5-doneCnt!==1?'s':''} not completed. Close visit anyway?`)) return;
+  } else if (!confirm(`Close visit for ${activeTechJobId}? This will mark the ticket as completed.`)) return;
   const t = tickets.find(x=>x.id===activeTechJobId);
-  if (t) t.status = 'completed';
+  if (t) {
+    t.status = 'completed';
+    const vd = getTicketVisit(t.id);
+    stampEdit(vd);
+    // Persist both status and final visit data to Supabase
+    db.updateStatus(t.id, 'completed');
+    db.saveVisit(t.id, vd);
+  }
+  const closedId = activeTechJobId;
   activeTechJobId = null;
-  techCheckState = {checkin:true,before:false,parts:false,notes:false,after:false,sig:false};
-  ['before','parts','notes','after','sig'].forEach(k => markChecklistPending(k, {before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'}[k]));
-  document.getElementById('av-id').textContent='No active job';
-  document.getElementById('av-title').textContent='All visits complete!';
-  document.getElementById('av-loc').textContent='Go to My Jobs to start a new visit';
-  resetVisitData();
+  techCheckState  = {checkin:true,before:false,parts:false,notes:false,after:false,sig:false};
+  ['before','parts','notes','after','sig'].forEach(k =>
+    markChecklistPending(k, {before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'}[k])
+  );
+  document.getElementById('av-id').textContent   = 'No active job';
+  document.getElementById('av-title').textContent = 'All visits complete!';
+  document.getElementById('av-loc').textContent   = 'Go to My Jobs to start a new visit';
+  document.getElementById('av-sub').textContent   = 'Job actions checklist';
+  resetVisitUI();
   renderAll();
-  showToast('✅ Visit closed! Report generated.');
+  showToast(`✅ ${closedId} closed! Report saved to database.`);
   goPage('my-jobs');
 }
 
@@ -2352,70 +2745,87 @@ function saveDetailReassign(id) {
   renderAll();
   const names = selected.map(e=>techDisplayName(e)).join(', ');
   showToast(`${id} assigned to ${names}`);
-  // Refresh the chip display
   openDetail(id);
+  // Persist to Supabase
+  db.updateAssignment(id, selected);
 }
 
 function changeStatus(id, s, btn) {
-  const t = tickets.find(x=>x.id===id); if(!t)return;
+  const t = tickets.find(x=>x.id===id); if(!t) return;
   t.status = s;
   document.querySelectorAll('.status-pill').forEach(p=>{p.classList.remove('sel');p.style.cssText='';});
   const sStyle={new:'background:#e0f2fe;color:#0369a1;border-color:#0369a1',assigned:'background:#dbeafe;color:#1d4ed8;border-color:#1d4ed8','in-progress':'background:var(--warn-bg);color:var(--warn);border-color:var(--warn)',completed:'background:var(--ok-bg);color:var(--ok);border-color:var(--ok)','on-hold':'background:var(--err-bg);color:#991b1b;border-color:#991b1b',closed:'background:#f3f4f6;color:#374151;border-color:#374151'};
   if(btn){btn.classList.add('sel');btn.style.cssText=sStyle[s]||'';}
   renderAll();
   showToast(`${id} → ${s.replace('-',' ')}`);
+  // Persist to Supabase
+  db.updateStatus(id, s);
 }
+
 function reassignTech(id, empNo) {
-  // Legacy single-tech shim — now wraps into array
-  const t=tickets.find(x=>x.id===id);
-  if(t){ t.assignedTo=[empNo]; renderAll(); showToast(`Assigned to ${techDisplayName(empNo)}`); }
+  const t = tickets.find(x=>x.id===id);
+  if(t){ t.assignedTo=[empNo]; renderAll(); showToast(`Assigned to ${techDisplayName(empNo)}`); db.updateAssignment(id,[empNo]); }
 }
+
 function quickAssign(id) {
-  const t=tickets.find(x=>x.id===id); if(!t)return;
+  const t = tickets.find(x=>x.id===id); if(!t) return;
   const empNo = autoAssign();
-  t.status='assigned';
-  t.assignedTo=[empNo];
-  renderAll(); showToast(`${id} assigned to ${techDisplayName(empNo)}`);
+  t.status = 'assigned';
+  t.assignedTo = [empNo];
+  renderAll();
+  showToast(`${id} assigned to ${techDisplayName(empNo)}`);
+  db.updateAssignment(id, [empNo]);
 }
+
 function autoAssign() {
-  // Return employee number of least-loaded technician
   const counts = technicianAccounts.map(tech => ({
     empNo: tech.employeeNo,
     c: tickets.filter(t => getAssignedArr(t).includes(tech.employeeNo) && !['completed','closed'].includes(t.status)).length
   }));
   return counts.sort((a,b)=>a.c-b.c)[0].empNo;
 }
+
 function deleteTicket(id) {
-  if(!confirm(`Delete ${id}?`))return;
-  tickets=tickets.filter(t=>t.id!==id); closeModal('detail-modal'); renderAll(); showToast(`🗑 ${id} deleted`);
+  if(!confirm(`Delete ${id}?`)) return;
+  tickets = tickets.filter(t=>t.id!==id);
+  closeModal('detail-modal');
+  renderAll();
+  showToast(`🗑 ${id} deleted`);
+  db.delete(id);
 }
 
-// ── CREATE REQUEST ──
+// ── CREATE REQUEST (Requester role) ──
 function submitCreateRequest() {
-  const customer=document.getElementById('cr-customer').value.trim();
-  const branch=document.getElementById('cr-branch').value;
-  const errEl=document.getElementById('cr-error');
-  if(!customer){errEl.textContent='Contact name is required.';errEl.style.display='block';return;}
-  if(!branch){errEl.textContent='Please select a team.';errEl.style.display='block';return;}
-  errEl.style.display='none';
-  const type=document.querySelector('#page-create-request .type-btn.sel')?.dataset.type||'maintenance';
-  const t={
-    id:nextId(), type, status:'new', priority:document.getElementById('cr-priority').value,
-    customer, branch, region:document.getElementById('cr-region').value,
-    equipment:document.getElementById('cr-equipment').value.trim()||'Equipment TBD',
-    description:document.getElementById('cr-description').value.trim(),
-    assignedTo:[autoAssign()],
-    date:document.getElementById('cr-date').value||new Date().toISOString().split('T')[0],
-    createdBy:currentUser.id, createdAt:Date.now(),
+  const customer = document.getElementById('cr-customer').value.trim();
+  const branch   = document.getElementById('cr-branch').value;
+  const errEl    = document.getElementById('cr-error');
+  if(!customer){ errEl.textContent='Contact name is required.'; errEl.style.display='block'; return; }
+  if(!branch)  { errEl.textContent='Please select a team.';    errEl.style.display='block'; return; }
+  errEl.style.display = 'none';
+  const type = document.querySelector('#page-create-request .type-btn.sel')?.dataset.type||'maintenance';
+  const t = {
+    id: nextIdLocal(), type, status:'new', priority: document.getElementById('cr-priority').value,
+    customer, branch, region: document.getElementById('cr-region').value,
+    equipment:   document.getElementById('cr-equipment').value.trim() || 'Equipment TBD',
+    description: document.getElementById('cr-description').value.trim(),
+    assignedTo:  [autoAssign()],
+    date:        document.getElementById('cr-date').value || new Date().toISOString().split('T')[0],
+    createdBy:   currentUser.id, createdAt: Date.now(),
   };
   tickets.unshift(t);
-  document.getElementById('cr-customer').value='';document.getElementById('cr-equipment').value='';
-  document.getElementById('cr-description').value='';document.getElementById('cr-date').value='';
+  // Clear form
+  ['cr-customer','cr-equipment','cr-description','cr-date'].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; });
   document.querySelectorAll('#page-create-request .type-btn').forEach(b=>b.classList.remove('sel'));
-  document.querySelector('#page-create-request [data-type=maintenance]').classList.add('sel');
+  document.querySelector('#page-create-request [data-type=maintenance]')?.classList.add('sel');
   renderAll();
   showToast(`✅ ${t.id} submitted!`);
   goPage('my-requests');
+  // Save to Supabase then correct the ID
+  db.nextId().then(realId => {
+    const idx = tickets.findIndex(x=>x.id===t.id);
+    if(idx>=0 && realId){ tickets[idx].id=realId; t.id=realId; }
+    db.save(t);
+  });
 }
 
 // ── NEW TICKET MODAL (Manager/Admin) ──
@@ -2424,15 +2834,13 @@ function openNewTicket() {
   if (!cfg.canCreateRequest) { showToast('⛔ Your role cannot create tickets'); return; }
   if (currentUser?.role?.startsWith('requester')) { goPage('create-request'); return; }
   resetForm();
-  document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
   populateTechCheckboxes('f-tech-list');
   openModal('new-ticket-modal');
 }
 
-// ── Render tech checkbox list ──
 function populateTechCheckboxes(containerId) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
+  const el = document.getElementById(containerId); if(!el) return;
   el.innerHTML = technicianAccounts.map(tech => `
     <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--rx);cursor:pointer;transition:background .1s;user-select:none;"
            onmouseover="this.style.background='rgba(0,90,169,.05)'" onmouseout="this.style.background=''">
@@ -2445,34 +2853,31 @@ function populateTechCheckboxes(containerId) {
     </label>`).join('');
 }
 
-// ── Get selected employee numbers from checkbox list ──
 function getSelectedTechs(containerId) {
-  const el = document.getElementById(containerId);
-  if (!el) return [];
-  return [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+  const el = document.getElementById(containerId); if(!el) return [];
+  return [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb=>cb.value);
 }
 
 function submitNewTicket() {
-  const customer=document.getElementById('f-customer').value.trim();
-  const branch=document.getElementById('f-branch').value;
-  const errEl=document.getElementById('form-error');
-  if(!customer){errEl.textContent='Customer name is required.';errEl.style.display='block';return;}
-  if(!branch){errEl.textContent='Please select a team.';errEl.style.display='block';return;}
+  const customer = document.getElementById('f-customer').value.trim();
+  const branch   = document.getElementById('f-branch').value;
+  const errEl    = document.getElementById('form-error');
+  if(!customer){ errEl.textContent='Customer name is required.'; errEl.style.display='block'; return; }
+  if(!branch)  { errEl.textContent='Please select a team.';     errEl.style.display='block'; return; }
   errEl.style.display='none';
-  const cfg=ROLE_CONFIG[currentUser?.role]||{};
-  const type=document.querySelector('#new-ticket-modal .type-btn.sel')?.dataset.type||'maintenance';
-  // Get selected technicians
+  const cfg  = ROLE_CONFIG[currentUser?.role]||{};
+  const type = document.querySelector('#new-ticket-modal .type-btn.sel')?.dataset.type||'maintenance';
   let selectedTechs = cfg.canAssign ? getSelectedTechs('f-tech-list') : [];
-  if (!selectedTechs.length) selectedTechs = [autoAssign()]; // fallback auto-assign
-  const t={
-    id:nextId(), type, status: selectedTechs.length ? 'assigned' : 'new',
-    priority:document.getElementById('f-priority').value,
-    customer, branch, region:document.getElementById('f-region').value,
-    equipment:document.getElementById('f-equipment').value.trim()||'Equipment TBD',
-    description:document.getElementById('f-description').value.trim(),
-    assignedTo: selectedTechs,
-    date:document.getElementById('f-date').value||new Date().toISOString().split('T')[0],
-    createdBy:currentUser.id, createdAt:Date.now(),
+  if(!selectedTechs.length) selectedTechs = [autoAssign()];
+  const t = {
+    id: nextIdLocal(), type, status: 'assigned',
+    priority:    document.getElementById('f-priority').value,
+    customer, branch, region: document.getElementById('f-region').value,
+    equipment:   document.getElementById('f-equipment').value.trim() || 'Equipment TBD',
+    description: document.getElementById('f-description').value.trim(),
+    assignedTo:  selectedTechs,
+    date:        document.getElementById('f-date').value || new Date().toISOString().split('T')[0],
+    createdBy:   currentUser.id, createdAt: Date.now(),
   };
   tickets.unshift(t);
   closeModal('new-ticket-modal');
@@ -2481,22 +2886,27 @@ function submitNewTicket() {
   const techNames = selectedTechs.map(e=>techDisplayName(e)).join(', ');
   showToast(`✅ ${t.id} created · Assigned to ${techNames}`);
   setTimeout(()=>goPage('tickets'),300);
+  // Save to Supabase then correct the ID
+  db.nextId().then(realId => {
+    const idx = tickets.findIndex(x=>x.id===t.id);
+    if(idx>=0 && realId){ tickets[idx].id=realId; t.id=realId; }
+    db.save(t);
+  });
 }
 
 function resetForm() {
-  ['f-customer','f-equipment','f-description'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  const fp=document.getElementById('f-priority');if(fp)fp.value='normal';
-  const fd=document.getElementById('f-date');if(fd)fd.value='';
-  const fr=document.getElementById('f-region');if(fr)fr.value='east';
-  // Uncheck all tech checkboxes
+  ['f-customer','f-equipment','f-description'].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; });
+  const fp=document.getElementById('f-priority'); if(fp)fp.value='normal';
+  const fd=document.getElementById('f-date');     if(fd)fd.value='';
+  const fr=document.getElementById('f-region');   if(fr)fr.value='east';
   document.querySelectorAll('#f-tech-list input[type=checkbox]').forEach(cb=>cb.checked=false);
   document.querySelectorAll('#new-ticket-modal .type-btn').forEach(b=>b.classList.remove('sel'));
-  const def=document.querySelector('#new-ticket-modal [data-type=maintenance]');if(def)def.classList.add('sel');
-  const fe=document.getElementById('form-error');if(fe)fe.style.display='none';
+  document.querySelector('#new-ticket-modal [data-type=maintenance]')?.classList.add('sel');
+  const fe=document.getElementById('form-error'); if(fe)fe.style.display='none';
 }
 
 function populateTeamDropdown(id) {
-  const sel=document.getElementById(id); if(!sel)return;
+  const sel=document.getElementById(id); if(!sel) return;
   sel.innerHTML='<option value="">Select team...</option>'+teamOptions.map(t=>`<option value="${t}">${t}</option>`).join('');
 }
 function selectType(el) {
@@ -2506,23 +2916,72 @@ function selectType(el) {
 }
 function setFilter(f,el){currentFilter=f;document.querySelectorAll('#filter-bar .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderTicketList();renderKanban();}
 function toggleView(){kanbanMode=!kanbanMode;document.getElementById('tkt-list-view').style.display=kanbanMode?'none':'block';document.getElementById('tkt-kanban-view').style.display=kanbanMode?'block':'none';document.getElementById('view-toggle').textContent=kanbanMode?'☰ List':'🗂 Kanban';}
-function clearAllData(){if(!confirm('Reset all demo data?'))return;localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(COUNTER_KEY);tickets=loadTickets();renderAll();showToast('Demo data restored!');}
+
+async function clearAllData() {
+  if(!confirm('Reset all data? This will CLEAR the Supabase database too.')) return;
+  showDbLoading('Resetting database…');
+  try {
+    // Delete all rows from Supabase
+    await supabase.from(TABLE).delete().neq('id','__none__');
+  } catch(e){ console.warn('DB clear failed:', e); }
+  localStorage.removeItem(CACHE_KEY);
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(COUNTER_KEY);
+  tickets = JSON.parse(JSON.stringify(SEED_TICKETS));
+  saveLocalCache(tickets);
+  hideDbLoading();
+  renderAll();
+  showToast('✅ Data reset — DB cleared');
+}
+
+// ══════════════════════════════════════════════════════
+//   SUPABASE LOAD & SYNC
+// ══════════════════════════════════════════════════════
+
+async function loadFromSupabase() {
+  showDbLoading('Loading tickets…');
+  const dbTickets = await db.load();
+  hideDbLoading();
+  if (dbTickets === null) {
+    // DB unreachable — stay on local cache, show banner
+    showToast('⚠️ Offline — showing cached data');
+    return;
+  }
+  if (dbTickets.length === 0 && SEED_TICKETS.length > 0) {
+    // DB is empty — seed it with sample data for first run
+    showDbLoading('First run — seeding sample data…');
+    for (const t of SEED_TICKETS) {
+      await db.save(t);
+    }
+    hideDbLoading();
+    tickets = JSON.parse(JSON.stringify(SEED_TICKETS));
+  } else {
+    tickets = dbTickets;
+  }
+  saveLocalCache(tickets);
+  renderAll();
+}
 
 // ══════════════════════════════
 //   INIT
 // ══════════════════════════════
-// Check for existing session
 (function init() {
   renderLoginScreen();
   try {
-    const sess=JSON.parse(localStorage.getItem(SESSION_KEY)||'null');
+    const sess = JSON.parse(localStorage.getItem(SESSION_KEY)||'null');
     if (sess?.userId) {
-      const user=demoUsers.find(u=>u.id===sess.userId);
-      if (user) { currentUser=user; document.getElementById('login-screen').classList.add('hidden'); document.getElementById('app-shell').classList.add('visible'); document.body.classList.add('app-active'); bootApp(); return; }
+      const user = demoUsers.find(u=>u.id===sess.userId);
+      if (user) {
+        currentUser = user;
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app-shell').classList.add('visible');
+        document.body.classList.add('app-active');
+        bootApp();
+        return;
+      }
     }
   } catch(e){}
-  // Show login
-  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('login-screen').style.display = 'block';
 })();
 </script>
 
@@ -2648,10 +3107,10 @@ const EXCEL_COLS = [
   { key: '_sla',          header: 'SLA Status' },
 ];
 
-// ── Get visit data for a ticket ──
+// ── Get visit data for a ticket (used by Excel + Action Report) ──
 function getVisitDataForTicket(id) {
-  if (visitData._forTicket === id || activeTechJobId === id) return visitData;
-  return { _forTicket:null, notes:{issue:'',action:'',rec:'',completion:''}, parts:[], beforePhotos:[], afterPhotos:[], signature:null, sigName:'' };
+  // Now visit data lives on the ticket itself — always fresh
+  return getTicketVisit(id);
 }
 
 // ── Build flat row for Excel ──
@@ -2848,7 +3307,12 @@ function buildActionReportHTML(t) {
     ? assignedArr.map(e => { const tech=getTechByEmpNo(e); return tech ? `${tech.name} (${tech.employeeNo})` : e; }).join(', ')
     : '—';
   const primaryTech = assignedArr.length ? (getTechByEmpNo(assignedArr[0])?.name || assignedArr[0]) : '—';
+  const closedDate  = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
   const closedTime  = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  // Audit trail
+  const auditLine = vd.updatedByName && vd.updatedAt
+    ? `Last updated by ${vd.updatedByName} · ${new Date(vd.updatedAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} ${new Date(vd.updatedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`
+    : 'No updates recorded';
 
   // Inspection findings — parse from issue notes or default
   const issueText = vd.notes.issue || t.description || 'No issue recorded.';
@@ -2914,7 +3378,7 @@ function buildActionReportHTML(t) {
         <div class="ar-field"><div class="ar-field-lbl">Region</div><div class="ar-field-val">${(t.region||'').charAt(0).toUpperCase()+(t.region||'').slice(1)}</div></div>
         <div class="ar-field"><div class="ar-field-lbl">Equipment</div><div class="ar-field-val">${t.equipment||'—'}</div></div>
         <div class="ar-field"><div class="ar-field-lbl">Model / Serial No.</div><div class="ar-field-val">${t.serial||'—'}</div></div>
-        <div class="ar-field"><div class="ar-field-lbl">Assigned Technician</div><div class="ar-field-val">${techLabel(t,3)||'—'}</div></div>
+        <div class="ar-field" style="grid-column:1/-1"><div class="ar-field-lbl">Assigned Technician${assignedArr.length!==1?'s':''} (${assignedArr.length})</div><div class="ar-field-val">${techNamesDisplay}</div></div>
         <div class="ar-field"><div class="ar-field-lbl">Visit Date</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${t.date||createdDate}</div></div>
         <div class="ar-field"><div class="ar-field-lbl">Completion Date</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${closedDate}</div></div>
         <div class="ar-field"><div class="ar-field-lbl">Priority</div><div class="ar-field-val">${(t.priority||'').charAt(0).toUpperCase()+(t.priority||'').slice(1)}</div></div>
@@ -3014,7 +3478,7 @@ function buildActionReportHTML(t) {
         <div>
           <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;font-weight:700;margin-bottom:6px;">Technician Signature</div>
           <div class="ar-sig-box"><div style="color:#9ca3af;font-size:12px;">Signature required</div></div>
-          <div style="margin-top:6px;font-size:11px;color:#6b7280">Technician: <strong>${techLabel(t,3)||'—'}</strong></div>
+          <div style="margin-top:6px;font-size:11px;color:#6b7280">Lead Technician: <strong>${primaryTech}</strong>${assignedArr.length>1?` <span style="color:#9ca3af">+ ${assignedArr.length-1} more</span>`:''}</div>
         </div>
       </div>
       <!-- Sign-off details -->
@@ -3046,7 +3510,8 @@ function buildActionReportHTML(t) {
       </div>
       <div style="text-align:right">
         <div class="ar-footer-text">Ticket: ${t.id}</div>
-        <div class="ar-footer-text">Technician: ${techLabel(t,3)||'—'}</div>
+        <div class="ar-footer-text">Team: ${assignedArr.length > 1 ? primaryTech+' +'+( assignedArr.length-1)+' more' : primaryTech}</div>
+        <div class="ar-footer-text" style="color:#0284c7">${auditLine}</div>
       </div>
     </div>
 
