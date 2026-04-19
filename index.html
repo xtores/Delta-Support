@@ -1090,7 +1090,7 @@ body.app-active{padding-bottom:var(--bnav);}
 // ══════════════════════════════════════════════════════════════
 //   SUPABASE CONFIG
 // ══════════════════════════════════════════════════════════════
-const SUPABASE_URL = 'https://eptihwvjbeulsjqvubgj.supabase.co';
+const SUPABASE_URL = 'https://bkkurzrhmhydfgqhtkvz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_miOEZEBa_KfnuZU5s5qiFA__xSwutKE';
 
 // Guard: if CDN failed to load, create a no-op stub so the rest of the
@@ -1099,7 +1099,24 @@ const SUPABASE_KEY = 'sb_publishable_miOEZEBa_KfnuZU5s5qiFA__xSwutKE';
 let supabaseClient;
 try {
   if (typeof supabase !== 'undefined' && supabase.createClient) {
-    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Bind native fetch before Supabase has any chance to wrap or patch it.
+    // This prevents the internal postMessage fetch-bridge from ever running,
+    // which is the direct cause of: DataCloneError: Headers object could not be cloned
+    const nativeFetch = window.fetch.bind(window);
+
+    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        persistSession:     false,
+        autoRefreshToken:   false,
+        detectSessionInUrl: false,
+      },
+      realtime: {
+        params: { eventsPerSecond: -1 },
+      },
+      global: {
+        fetch: nativeFetch,
+      },
+    });
   } else {
     throw new Error('Supabase CDN not loaded');
   }
@@ -1110,7 +1127,7 @@ try {
   const chain = { select:()=>chain, insert:()=>chain, update:()=>chain,
                   delete:()=>chain, upsert:()=>chain, eq:()=>chain,
                   order:()=>chain, limit:()=>chain, single:()=>chain,
-                  then: (r) => Promise.resolve(noop()) };
+                  then: () => Promise.resolve(noop()) };
   const storageChain = {
     upload:       () => Promise.resolve({ data:null, error:{ message:'offline' } }),
     getPublicUrl: () => ({ data: { publicUrl: null } }),
@@ -1127,50 +1144,98 @@ try {
 const TABLE = 'tickets';
 
 const db = {
-  // ── Load all tickets (with optional filter) ──
+
+  // ── Load all tickets ──
   async load() {
     try {
       const { data, error } = await supabaseClient
         .from(TABLE)
         .select('*')
         .order('created_at', { ascending: false });
-      if (error) throw error;
-      // Sanitize each row before mapping — strips Headers/Response non-serializable refs
-      const cleanRows = (data || []).map(row => sanitize(row)).filter(Boolean);
-      return cleanRows.map(dbRowToTicket);
+
+      if (error) {
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        console.error('[DB ERROR details]:', error?.details);
+        console.error('[DB ERROR hint]:', error?.hint);
+        console.error('[DB ERROR code]:', error?.code);
+        return null;
+      }
+
+      const cleanData = JSON.parse(JSON.stringify(data || []));
+      console.log('[DB] Loaded:', cleanData.length);
+      return JSON.parse(JSON.stringify(cleanData.map(row => dbRowToTicket(row))));
+
     } catch(e) {
-      console.warn('Supabase load failed, using local cache:', e.message);
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
       return null;
     }
   },
 
-  // ── Upsert a single ticket (insert or update) ──
+  // ── Upsert a single ticket ──
   async save(ticket) {
     try {
-      const row = sanitize(ticketToDbRow(ticket)); // full sanitize before send
-      const { error } = await supabaseClient.from(TABLE).upsert(row, { onConflict: 'id' });
-      if (error) throw error;
+      const row = JSON.parse(JSON.stringify(ticketToDbRow(ticket)));
+      const { error } = await supabaseClient
+        .from(TABLE)
+        .upsert(row, { onConflict: 'id' });
+
+      if (error) {
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        console.error('[DB ERROR details]:', error?.details);
+        console.error('[DB ERROR hint]:', error?.hint);
+        console.error('[DB ERROR code]:', error?.code);
+        saveLocalCache(tickets);
+        return false;
+      }
+
       saveLocalCache(tickets);
       return true;
     } catch(e) {
-      console.warn('Supabase save failed:', e.message);
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
       saveLocalCache(tickets);
       return false;
     }
   },
 
-  // ── Save visit data only (checklist) ──
+  // ── Save visit data only ──
   async saveVisit(ticketId, visitData) {
     try {
-      const cleanVisit = sanitize(visitData); // strip any non-serializable refs
-      const { error } = await supabaseClient.from(TABLE)
+      const cleanVisit = JSON.parse(JSON.stringify(visitData || {}));
+      // Strip File objects from photo arrays before sending to Supabase
+      ['beforePhotos','afterPhotos'].forEach(key => {
+        if (Array.isArray(cleanVisit[key])) {
+          cleanVisit[key] = cleanVisit[key].map(p => ({
+            name:       p.name       || '',
+            storageUrl: p.storageUrl || null,
+            previewUrl: p.storageUrl || p.previewUrl || null,
+          }));
+        }
+      });
+
+      const { error } = await supabaseClient
+        .from(TABLE)
         .update({ visit_data: cleanVisit, updated_at: new Date().toISOString() })
         .eq('id', ticketId);
-      if (error) throw error;
+
+      if (error) {
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        console.error('[DB ERROR details]:', error?.details);
+        console.error('[DB ERROR hint]:', error?.hint);
+        console.error('[DB ERROR code]:', error?.code);
+        saveLocalCache(tickets);
+        return false;
+      }
+
       saveLocalCache(tickets);
       return true;
     } catch(e) {
-      console.warn('Supabase visit save failed:', e.message);
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
       saveLocalCache(tickets);
       return false;
     }
@@ -1179,14 +1244,25 @@ const db = {
   // ── Update status only ──
   async updateStatus(ticketId, status) {
     try {
-      const { error } = await supabaseClient.from(TABLE)
+      const { error } = await supabaseClient
+        .from(TABLE)
         .update({ status, updated_at: new Date().toISOString() })
         .eq('id', ticketId);
-      if (error) throw error;
+
+      if (error) {
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        console.error('[DB ERROR details]:', error?.details);
+        console.error('[DB ERROR hint]:', error?.hint);
+        console.error('[DB ERROR code]:', error?.code);
+        return false;
+      }
+
       saveLocalCache(tickets);
       return true;
     } catch(e) {
-      console.warn('Supabase status update failed:', e.message);
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
       return false;
     }
   },
@@ -1194,14 +1270,26 @@ const db = {
   // ── Update assigned_to ──
   async updateAssignment(ticketId, assignedTo) {
     try {
-      const { error } = await supabaseClient.from(TABLE)
-        .update({ assigned_to: assignedTo, status: 'assigned', updated_at: new Date().toISOString() })
+      const cleanAssigned = JSON.parse(JSON.stringify(assignedTo || []));
+      const { error } = await supabaseClient
+        .from(TABLE)
+        .update({ assigned_to: cleanAssigned, status: 'assigned', updated_at: new Date().toISOString() })
         .eq('id', ticketId);
-      if (error) throw error;
+
+      if (error) {
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        console.error('[DB ERROR details]:', error?.details);
+        console.error('[DB ERROR hint]:', error?.hint);
+        console.error('[DB ERROR code]:', error?.code);
+        return false;
+      }
+
       saveLocalCache(tickets);
       return true;
     } catch(e) {
-      console.warn('Supabase assignment update failed:', e.message);
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
       return false;
     }
   },
@@ -1209,11 +1297,24 @@ const db = {
   // ── Delete a ticket ──
   async delete(ticketId) {
     try {
-      const { error } = await supabaseClient.from(TABLE).delete().eq('id', ticketId);
-      if (error) throw error;
+      const { error } = await supabaseClient
+        .from(TABLE)
+        .delete()
+        .eq('id', ticketId);
+
+      if (error) {
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        console.error('[DB ERROR details]:', error?.details);
+        console.error('[DB ERROR hint]:', error?.hint);
+        console.error('[DB ERROR code]:', error?.code);
+        return false;
+      }
+
       return true;
     } catch(e) {
-      console.warn('Supabase delete failed:', e.message);
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
       return false;
     }
   },
@@ -1221,85 +1322,168 @@ const db = {
   // ── Generate next ticket ID from DB ──
   async nextId() {
     try {
-      const { data } = await supabaseClient.from(TABLE).select('id').order('created_at', { ascending:false }).limit(1);
-      if (data && data.length) {
-        const last = parseInt((data[0].id || 'TKT-0000').replace('TKT-','')) || 0;
-        return 'TKT-' + String(last + 1).padStart(4, '0');
+      const { data, error } = await supabaseClient
+        .from(TABLE)
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        return nextIdLocal();
       }
-    } catch(e) { /* fallback below */ }
-    return nextIdLocal();
-  }
+
+      const cleanData = JSON.parse(JSON.stringify(data || []));
+      const lastId = (cleanData.length > 0) ? String(cleanData[0].id || 'TKT-0000') : 'TKT-0000';
+      const last = parseInt(lastId.replace('TKT-','')) || 0;
+      return 'TKT-' + String(last + 1).padStart(4, '0');
+
+    } catch(e) {
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
+      return nextIdLocal();
+    }
+  },
 };
 
 // ══════════════════════════════════════════════════════════════
-//   STORAGE LAYER — Supabase Storage bucket uploads
-//   Buckets: before-photos, after-photos, signatures
-//   Table:   ticket_checklist  (ticket_id PK, upsert on conflict)
+//   STORAGE LAYER — Supabase Storage + ticket_checklist table
+//   Buckets : before-photos | after-photos | signatures
+//   Table   : ticket_checklist  (ticket_id is the primary key)
 // ══════════════════════════════════════════════════════════════
 const CHECKLIST_TABLE = 'ticket_checklist';
 
 const storage = {
 
-  // ── Upload one File to a bucket, return public URL or null ──
-  async uploadFile(bucket, path, file) {
+  // ── Upload one File object to a bucket. Returns public URL or null. ──
+  async uploadFile(bucket, filePath, file) {
+    console.log(`[Storage] Uploading to ${bucket}/${filePath} …`);
     try {
-      const { error } = await supabaseClient.storage
+      // Determine a safe content type — never send empty string to Supabase
+      const contentType = (file.type && file.type !== '')
+        ? file.type
+        : (filePath.endsWith('.png') ? 'image/png' : 'image/jpeg');
+
+      const { data: uploadData, error: uploadError } = await supabaseClient.storage
         .from(bucket)
-        .upload(path, file, { upsert: true, contentType: file.type || 'image/png' });
-      if (error) throw error;
-      const { data } = supabaseClient.storage.from(bucket).getPublicUrl(path);
-      return data?.publicUrl || null;
+        .upload(filePath, file, { upsert: true, contentType });
+
+      if (uploadError) {
+        console.error(`[Storage] Upload error (${bucket}/${filePath}):`, uploadError.message);
+        return null;
+      }
+
+      // Extract only the plain path string — NEVER log or store the full uploadData object
+      // (it contains internal Headers references that cannot be cloned/serialized)
+      const uploadedPath = (uploadData && typeof uploadData.path === 'string')
+        ? uploadData.path
+        : filePath;
+      console.log(`[Storage] Upload OK — path: ${uploadedPath}`);
+
+      // getPublicUrl is synchronous — returns { data: { publicUrl } }
+      const { data: urlData } = supabaseClient.storage
+        .from(bucket)
+        .getPublicUrl(uploadedPath);
+
+      const publicUrl = (urlData && typeof urlData.publicUrl === 'string')
+        ? urlData.publicUrl
+        : null;
+      console.log(`[Storage] Public URL: ${publicUrl}`);
+      return publicUrl;
+
     } catch(e) {
-      console.warn(`Storage upload failed (${bucket}/${path}):`, e.message);
+      console.error(`[Storage] Unexpected error (${bucket}/${filePath}):`, e.message);
       return null;
     }
   },
 
-  // ── Upload a base64 dataURL as a PNG Blob ──
-  async uploadDataUrl(bucket, path, dataUrl) {
+  // ── Convert a base64 dataURL → Blob → upload. Works on iOS/Safari. ──
+  async uploadDataUrl(bucket, filePath, dataUrl) {
+    console.log(`[Storage] Converting dataUrl and uploading to ${bucket}/${filePath} …`);
     try {
-      const res  = await fetch(dataUrl);
-      const blob = await res.blob();
-      const file = new File([blob], path, { type: 'image/png' });
-      return await this.uploadFile(bucket, path, file);
+      // Use atob() instead of fetch(dataUrl) — fetch of data: URIs fails on iOS Safari
+      const [header, base64] = dataUrl.split(',');
+      const mimeMatch = header.match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+      const binary = atob(base64);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime });
+      const file = new File([blob], filePath.split('/').pop(), { type: mime });
+      return await this.uploadFile(bucket, filePath, file);
     } catch(e) {
-      console.warn(`DataURL upload failed (${bucket}/${path}):`, e.message);
+      console.error(`[Storage] DataUrl conversion failed (${bucket}/${filePath}):`, e);
       return null;
     }
   },
 
-  // ── Upsert a checklist row for a ticket ──
+  // ── Upsert checklist row (insert or update, never duplicate) ──
   async saveChecklist(ticketId, fields) {
+    console.log(`[Checklist] Saving for ticket ${ticketId}:`, Object.keys(fields));
     try {
-      const row = sanitize({
-        ticket_id:    ticketId,
-        updated_at:   new Date().toISOString(),
-        updated_by:   currentUser?.employeeNo || currentUser?.id || null,
+      if (!ticketId) throw new Error('No ticketId provided');
+
+      const row = JSON.parse(JSON.stringify({
+        ticket_id:  ticketId,
+        updated_at: new Date().toISOString(),
+        updated_by: currentUser?.employeeNo || currentUser?.id || null,
         ...fields,
-      });
+      }));
+
       const { error } = await supabaseClient
         .from(CHECKLIST_TABLE)
-        .upsert(row, { onConflict: 'ticket_id' });
-      if (error) throw error;
+        .upsert(row, { onConflict: 'ticket_id', ignoreDuplicates: false });
+
+      if (error) {
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        console.error('[DB ERROR details]:', error?.details);
+        console.error('[DB ERROR hint]:', error?.hint);
+        console.error('[DB ERROR code]:', error?.code);
+        return false;
+      }
+
+      console.log(`[Checklist] ✅ Saved OK for ${ticketId}`);
       return true;
+
     } catch(e) {
-      console.warn('Checklist save failed:', e.message);
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
       return false;
     }
   },
 
-  // ── Load checklist row for a ticket ──
+  // ── Load checklist row (PGRST116 = not found, treated as null) ──
   async loadChecklist(ticketId) {
+    console.log(`[Checklist] Loading for ticket ${ticketId} …`);
     try {
       const { data, error } = await supabaseClient
         .from(CHECKLIST_TABLE)
         .select('*')
         .eq('ticket_id', ticketId)
         .single();
-      if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
-      return sanitize(data) || null;
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          console.log(`[Checklist] No row found for ${ticketId} — will create on next save`);
+          return null;
+        }
+        console.error('[DB ERROR full]:', error);
+        console.error('[DB ERROR message]:', error?.message);
+        console.error('[DB ERROR details]:', error?.details);
+        console.error('[DB ERROR hint]:', error?.hint);
+        console.error('[DB ERROR code]:', error?.code);
+        return null;
+      }
+
+      const cleanData = JSON.parse(JSON.stringify(data || {}));
+      console.log(`[Checklist] Loaded for ${ticketId}`);
+      return cleanData;
+
     } catch(e) {
-      console.warn('Checklist load failed:', e.message);
+      console.error('[DB ERROR full]:', e);
+      console.error('[DB ERROR message]:', e?.message);
       return null;
     }
   },
@@ -1354,18 +1538,16 @@ function dbRowToTicket(row) {
 const CACHE_KEY = 'df_hub_tickets_v5_cache';
 function saveLocalCache(arr) {
   try {
-    // Strip File objects from photo arrays — they can't be JSON-serialized
+    // Build plain rows, stripping File objects from photo arrays
     const stripped = arr.map(t => {
       const row = ticketToDbRow(t);
-      // visit_data photos may contain File refs — strip them
       if (row.visit_data) {
         ['beforePhotos','afterPhotos'].forEach(key => {
           if (Array.isArray(row.visit_data[key])) {
             row.visit_data[key] = row.visit_data[key].map(p => ({
               name:       p.name       || '',
               storageUrl: p.storageUrl || null,
-              previewUrl: p.storageUrl || p.dataUrl || p.previewUrl || null,
-              dataUrl:    p.storageUrl ? null : (p.dataUrl || null), // only keep base64 if no storageUrl
+              previewUrl: p.storageUrl || p.previewUrl || null,
               // file: intentionally omitted — not serializable
             }));
           }
@@ -1373,7 +1555,10 @@ function saveLocalCache(arr) {
       }
       return row;
     });
-    localStorage.setItem(CACHE_KEY, JSON.stringify(stripped));
+    // Final hard round-trip — eliminates any remaining non-serializable references
+    // before localStorage.setItem calls structuredClone internally on some browsers
+    const safeJson = JSON.stringify(JSON.parse(JSON.stringify(stripped)));
+    localStorage.setItem(CACHE_KEY, safeJson);
   } catch(e) {
     console.warn('Cache write failed:', e.message);
   }
@@ -2507,51 +2692,71 @@ async function savePhotos() {
   const count  = arr.length;
   if (!count) { showToast('Please add at least one photo'); return; }
 
+  console.log(`[savePhotos] Starting upload of ${count} photo(s) to bucket '${bucket}' for ticket ${activeTechJobId}`);
+
   // Show uploading state
   const saveBtn = document.querySelector('#photos-modal .btn-p');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
 
-  // Upload any photos that don't yet have a storageUrl
-  const pending = arr.filter(p => !p.storageUrl && (p.file || p.previewUrl || p.dataUrl));
-  for (const photo of pending) {
-    const path = `${activeTechJobId}/${Date.now()}-${(photo.name||'photo.jpg').replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-    let url = null;
-    if (photo.file) {
-      url = await storage.uploadFile(bucket, path, photo.file);
-    } else if (photo.dataUrl) {
-      url = await storage.uploadDataUrl(bucket, path, photo.dataUrl);
+  let uploadedCount = 0;
+
+  // Upload each photo that doesn't yet have a storageUrl
+  for (const photo of arr) {
+    if (photo.storageUrl) {
+      console.log(`[savePhotos] Already uploaded: ${photo.name}`);
+      uploadedCount++;
+      continue;
     }
+
+    // Build a clean filename: ticketId/timestamp-originalname
+    const safeName = (photo.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `${activeTechJobId}/${Date.now()}-${safeName}`;
+
+    let url = null;
+    if (photo.file instanceof File) {
+      console.log(`[savePhotos] Uploading File object: ${photo.name}`);
+      url = await storage.uploadFile(bucket, filePath, photo.file);
+    } else if (typeof photo.dataUrl === 'string' && photo.dataUrl.startsWith('data:')) {
+      console.log(`[savePhotos] Uploading dataUrl: ${photo.name}`);
+      url = await storage.uploadDataUrl(bucket, filePath, photo.dataUrl);
+    } else if (typeof photo.previewUrl === 'string' && photo.previewUrl.startsWith('data:')) {
+      console.log(`[savePhotos] Uploading previewUrl as dataUrl: ${photo.name}`);
+      url = await storage.uploadDataUrl(bucket, filePath, photo.previewUrl);
+    }
+
     if (url) {
       photo.storageUrl = url;
-      // Revoke the local blob URL now that we have a permanent URL
       if (photo.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(photo.previewUrl);
       photo.previewUrl = url;
-      delete photo.file; // drop File ref — no longer needed
+      delete photo.file;
+      uploadedCount++;
+      console.log(`[savePhotos] ✅ Uploaded ${photo.name} → ${url}`);
+    } else {
+      console.warn(`[savePhotos] ⚠️ Upload failed for ${photo.name} — kept locally`);
     }
-    // If upload failed, keep local preview/dataUrl as fallback — still usable offline
   }
 
   stampEdit(vd);
-  renderPhotoGrid(); // refresh to show ✓ badges on uploaded photos
+  renderPhotoGrid();
 
-  // Build plain URL arrays for checklist table
-  const urls = arr.map(p => p.storageUrl || p.previewUrl || p.dataUrl || '').filter(Boolean);
+  // Build clean URL array — prefer storageUrl, fall back to local dataUrl
+  const urls = arr.map(p => p.storageUrl || p.dataUrl || '').filter(Boolean);
+  console.log(`[savePhotos] Final URL array (${urls.length}):`, urls);
+
   const checklistField = currentPhotoType === 'before'
     ? { before_photos: urls }
     : { after_photos:  urls };
 
-  // Persist to ticket_checklist table
   if (activeTechJobId) {
-    await storage.saveChecklist(activeTechJobId, checklistField);
-    // Also keep visit_data in sync on tickets table (stores URLs only, no Files)
+    const ok = await storage.saveChecklist(activeTechJobId, checklistField);
+    console.log(`[savePhotos] Checklist save ${ok ? '✅ OK' : '❌ FAILED'}`);
     db.saveVisit(activeTechJobId, vd);
   }
 
   if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
   closeModal('photos-modal');
-  const uploaded = arr.filter(p => p.storageUrl).length;
   markChecklistDone(currentPhotoType, `${count} photo${count!==1?'s':''} · tap to edit`);
-  showToast(`✅ ${count} ${currentPhotoType} photo${count!==1?'s':''} saved${uploaded < count ? ' (some offline)' : ''}`);
+  showToast(`✅ ${uploadedCount}/${count} photo${count!==1?'s':''} uploaded`);
 }
 
 // ══════════════════════════════════════════════════
@@ -2610,10 +2815,11 @@ async function saveParts() {
   const count = vd.parts.length;
   if (!count) { showToast('Please add at least one part'); return; }
   stampEdit(vd);
-  // Persist to ticket_checklist
+  console.log(`[saveParts] Saving ${count} part(s) for ticket ${activeTechJobId}`);
   if (activeTechJobId) {
     const cleanParts = sanitize(vd.parts);
-    await storage.saveChecklist(activeTechJobId, { spare_parts: cleanParts });
+    const ok = await storage.saveChecklist(activeTechJobId, { spare_parts: cleanParts });
+    console.log(`[saveParts] Checklist save ${ok ? '✅ OK' : '❌ FAILED'}`);
     db.saveVisit(activeTechJobId, vd);
   }
   closeModal('parts-modal');
@@ -2635,11 +2841,10 @@ async function saveNotes() {
   vd.notes   = { issue, action, rec, completion };
   const filled = [issue, action, rec, completion].filter(Boolean).length;
   stampEdit(vd);
-  // Persist to ticket_checklist
+  console.log(`[saveNotes] Saving ${filled} note field(s) for ticket ${activeTechJobId}`);
   if (activeTechJobId) {
-    await storage.saveChecklist(activeTechJobId, {
-      work_notes:  sanitize(vd.notes),
-    });
+    const ok = await storage.saveChecklist(activeTechJobId, { work_notes: sanitize(vd.notes) });
+    console.log(`[saveNotes] Checklist save ${ok ? '✅ OK' : '❌ FAILED'}`);
     db.saveVisit(activeTechJobId, vd);
   }
   closeModal('notes-modal');
@@ -2720,45 +2925,47 @@ function clearSignature() {
 
 async function saveSignature() {
   if (!sigHasData) { showToast('Please ask customer to sign first'); return; }
-  const name     = document.getElementById('sig-customer-name').value.trim();
-  const vd       = activeVisit();
-  const dataUrl  = sigCanvas.toDataURL('image/png');
-  vd.signature   = dataUrl;  // keep local copy as fallback
-  vd.sigName     = name;
+  const name    = document.getElementById('sig-customer-name').value.trim();
+  const vd      = activeVisit();
+  const dataUrl = sigCanvas.toDataURL('image/png');
+  vd.signature  = dataUrl;
+  vd.sigName    = name;
   stampEdit(vd);
 
-  // Show uploading state
   const saveBtn = document.querySelector('#sig-modal .btn-p');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
 
-  let signatureUrl = dataUrl; // default to base64 if upload fails
+  let signatureUrl = null;
 
   if (activeTechJobId) {
-    const path = `${activeTechJobId}/signature-${Date.now()}.png`;
-    const uploaded = await storage.uploadDataUrl('signatures', path, dataUrl);
-    if (uploaded) {
-      signatureUrl     = uploaded;
-      vd.signatureUrl  = uploaded; // store public URL alongside local copy
+    const filePath = `${activeTechJobId}/signature-${Date.now()}.png`;
+    console.log(`[saveSignature] Uploading signature for ticket ${activeTechJobId} → ${filePath}`);
+    signatureUrl = await storage.uploadDataUrl('signatures', filePath, dataUrl);
+    if (signatureUrl) {
+      vd.signatureUrl = signatureUrl;
+      console.log(`[saveSignature] ✅ Signature uploaded: ${signatureUrl}`);
+    } else {
+      console.warn('[saveSignature] ⚠️ Upload failed — keeping base64 locally');
     }
-    // Write to ticket_checklist
-    await storage.saveChecklist(activeTechJobId, {
-      signature_url: signatureUrl,
+
+    const ok = await storage.saveChecklist(activeTechJobId, {
+      signature_url: signatureUrl || null,
       sig_name:      name || null,
     });
+    console.log(`[saveSignature] Checklist save ${ok ? '✅ OK' : '❌ FAILED'}`);
     db.saveVisit(activeTechJobId, vd);
   }
 
   if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Signature'; }
 
-  // Update preview
   const preview = document.getElementById('sig-saved-preview');
   const img     = document.getElementById('sig-preview-img');
   if (preview) preview.style.display = 'block';
-  if (img)     img.src = dataUrl; // always show local preview for responsiveness
+  if (img)     img.src = signatureUrl || dataUrl;
 
   closeModal('sig-modal');
   markChecklistDone('sig', name ? `Signed by ${name} · tap to edit` : 'Signed · tap to edit');
-  showToast(`✅ Signature saved${vd.signatureUrl ? '' : ' (offline)'}`);
+  showToast(signatureUrl ? '✅ Signature uploaded' : '✅ Signature saved (offline)');
 }
 
 // ── RESET VISIT UI (does NOT wipe ticket data) ──
@@ -3165,24 +3372,32 @@ async function clearAllData() {
 
 async function loadFromSupabase() {
   showDbLoading('Loading tickets…');
+  console.log('[DB] Loading tickets from Supabase…');
   const dbTickets = await db.load();
   hideDbLoading();
+
   if (dbTickets === null) {
-    // DB unreachable — stay on local cache, show banner
+    console.warn('[DB] Load returned null — using local cache (offline mode)');
     showToast('⚠️ Offline — showing cached data');
     return;
   }
+
+  console.log('[DB] Loaded:', dbTickets.length);
+
   if (dbTickets.length === 0 && SEED_TICKETS.length > 0) {
-    // DB is empty — seed it with sample data for first run
     showDbLoading('First run — seeding sample data…');
+    console.log('[DB] Empty DB — seeding sample data…');
     for (const t of SEED_TICKETS) {
       await db.save(t);
     }
     hideDbLoading();
     tickets = JSON.parse(JSON.stringify(SEED_TICKETS));
+    console.log('[DB] Seeded', SEED_TICKETS.length, 'sample ticket(s)');
   } else {
-    tickets = dbTickets;
+    // Final defensive round-trip — guarantees tickets[] is 100% plain JSON
+    tickets = JSON.parse(JSON.stringify(dbTickets));
   }
+
   saveLocalCache(tickets);
   renderAll();
 }
