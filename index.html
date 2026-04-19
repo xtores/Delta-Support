@@ -1084,16 +1084,16 @@ body.app-active{padding-bottom:var(--bnav);}
 </div>
 
 <!-- Supabase JS -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
-'use strict';
 // ══════════════════════════════════════════════════════════════
 //   SUPABASE CONFIG
 // ══════════════════════════════════════════════════════════════
-const SUPABASE_URL  = 'https://eptihwvjbeulsjqvubgj.supabase.co';
-const SUPABASE_KEY  = 'sb_publishable_miOEZEBa_KfnuZU5s5qiFA__xSwutKE';
-const supabase      = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const SUPABASE_URL = 'https://eptihwvjbeulsjqvubgj.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_miOEZEBa_KfnuZU5s5qiFA__xSwutKE';
+// Use supabaseClient to avoid name clash with the window.supabase library object
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ══════════════════════════════════════════════════════════════
 //   DATABASE LAYER
@@ -1106,31 +1106,31 @@ const db = {
   // ── Load all tickets (with optional filter) ──
   async load() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from(TABLE)
         .select('*')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      // Map DB rows → app ticket objects
-      return (data || []).map(dbRowToTicket);
+      // Sanitize each row before mapping — strips Headers/Response non-serializable refs
+      const cleanRows = (data || []).map(row => sanitize(row)).filter(Boolean);
+      return cleanRows.map(dbRowToTicket);
     } catch(e) {
       console.warn('Supabase load failed, using local cache:', e.message);
-      return null; // caller will fall back to localStorage
+      return null;
     }
   },
 
   // ── Upsert a single ticket (insert or update) ──
   async save(ticket) {
     try {
-      const row = ticketToDbRow(ticket);
-      const { error } = await supabase.from(TABLE).upsert(row, { onConflict: 'id' });
+      const row = sanitize(ticketToDbRow(ticket)); // full sanitize before send
+      const { error } = await supabaseClient.from(TABLE).upsert(row, { onConflict: 'id' });
       if (error) throw error;
-      // Keep local cache in sync
       saveLocalCache(tickets);
       return true;
     } catch(e) {
       console.warn('Supabase save failed:', e.message);
-      saveLocalCache(tickets); // at least persist locally
+      saveLocalCache(tickets);
       return false;
     }
   },
@@ -1138,8 +1138,9 @@ const db = {
   // ── Save visit data only (checklist) ──
   async saveVisit(ticketId, visitData) {
     try {
-      const { error } = await supabase.from(TABLE)
-        .update({ visit_data: visitData, updated_at: new Date().toISOString() })
+      const cleanVisit = sanitize(visitData); // strip any non-serializable refs
+      const { error } = await supabaseClient.from(TABLE)
+        .update({ visit_data: cleanVisit, updated_at: new Date().toISOString() })
         .eq('id', ticketId);
       if (error) throw error;
       saveLocalCache(tickets);
@@ -1154,7 +1155,7 @@ const db = {
   // ── Update status only ──
   async updateStatus(ticketId, status) {
     try {
-      const { error } = await supabase.from(TABLE)
+      const { error } = await supabaseClient.from(TABLE)
         .update({ status, updated_at: new Date().toISOString() })
         .eq('id', ticketId);
       if (error) throw error;
@@ -1169,7 +1170,7 @@ const db = {
   // ── Update assigned_to ──
   async updateAssignment(ticketId, assignedTo) {
     try {
-      const { error } = await supabase.from(TABLE)
+      const { error } = await supabaseClient.from(TABLE)
         .update({ assigned_to: assignedTo, status: 'assigned', updated_at: new Date().toISOString() })
         .eq('id', ticketId);
       if (error) throw error;
@@ -1184,7 +1185,7 @@ const db = {
   // ── Delete a ticket ──
   async delete(ticketId) {
     try {
-      const { error } = await supabase.from(TABLE).delete().eq('id', ticketId);
+      const { error } = await supabaseClient.from(TABLE).delete().eq('id', ticketId);
       if (error) throw error;
       return true;
     } catch(e) {
@@ -1196,7 +1197,7 @@ const db = {
   // ── Generate next ticket ID from DB ──
   async nextId() {
     try {
-      const { data } = await supabase.from(TABLE).select('id').order('created_at', { ascending:false }).limit(1);
+      const { data } = await supabaseClient.from(TABLE).select('id').order('created_at', { ascending:false }).limit(1);
       if (data && data.length) {
         const last = parseInt((data[0].id || 'TKT-0000').replace('TKT-','')) || 0;
         return 'TKT-' + String(last + 1).padStart(4, '0');
@@ -1207,23 +1208,29 @@ const db = {
 };
 
 // ── Mapping: app object ↔ DB row ──
+// sanitize() strips all non-JSON-serializable properties via round-trip
+function sanitize(obj) {
+  if (obj === null || obj === undefined) return null;
+  try { return JSON.parse(JSON.stringify(obj)); } catch(e) { return null; }
+}
+
 function ticketToDbRow(t) {
   return {
-    id:           t.id,
-    type:         t.type,
-    status:       t.status,
-    priority:     t.priority,
-    customer:     t.customer,
-    branch:       t.branch,
-    region:       t.region,
-    equipment:    t.equipment || null,
-    description:  t.description || null,
-    assigned_to:  t.assignedTo || [],           // jsonb array
-    scheduled_date: t.date || null,
-    created_by:   t.createdBy || null,
-    visit_data:   t.visitData || null,          // jsonb — photos, parts, notes, sig
-    created_at:   t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
-    updated_at:   new Date().toISOString(),
+    id:             t.id,
+    type:           t.type,
+    status:         t.status,
+    priority:       t.priority,
+    customer:       t.customer,
+    branch:         t.branch,
+    region:         t.region,
+    equipment:      t.equipment   || null,
+    description:    t.description || null,
+    assigned_to:    sanitize(t.assignedTo) || [],
+    scheduled_date: t.date        || null,
+    created_by:     t.createdBy   || null,
+    visit_data:     sanitize(t.visitData),   // deep-sanitize — removes any Headers/Response refs
+    created_at:     t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
+    updated_at:     new Date().toISOString(),
   };
 }
 
@@ -1236,12 +1243,12 @@ function dbRowToTicket(row) {
     customer:    row.customer,
     branch:      row.branch,
     region:      row.region,
-    equipment:   row.equipment || '',
+    equipment:   row.equipment   || '',
     description: row.description || '',
-    assignedTo:  row.assigned_to || [],
+    assignedTo:  sanitize(row.assigned_to) || [],
     date:        row.scheduled_date || '',
-    createdBy:   row.created_by || '',
-    visitData:   row.visit_data || null,
+    createdBy:   row.created_by   || '',
+    visitData:   sanitize(row.visit_data),   // deep-sanitize — plain object only
     createdAt:   row.created_at ? new Date(row.created_at).getTime() : Date.now(),
   };
 }
@@ -1249,12 +1256,20 @@ function dbRowToTicket(row) {
 // ── Local cache helpers ──
 const CACHE_KEY = 'df_hub_tickets_v5_cache';
 function saveLocalCache(arr) {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(arr.map(ticketToDbRow))); } catch(e){}
+  try {
+    // Always go through sanitize before storing — eliminates any Headers/Response objects
+    const plain = arr.map(t => ticketToDbRow(t));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(plain));
+  } catch(e) {
+    console.warn('Cache write failed:', e.message);
+  }
 }
 function loadLocalCache() {
   try {
     const r = localStorage.getItem(CACHE_KEY);
-    return r ? JSON.parse(r).map(dbRowToTicket) : null;
+    if (!r) return null;
+    const rows = JSON.parse(r);
+    return Array.isArray(rows) ? rows.map(dbRowToTicket) : null;
   } catch(e) { return null; }
 }
 
@@ -1278,12 +1293,9 @@ function hideDbLoading() {
   const el = document.getElementById('db-loading');
   if (el) el.style.display = 'none';
 }
-</script>
 
-<script>
-'use strict';
 // ══════════════════════════════════════════════════════════════
-//   DELTA FITNESS SERVICE HUB v4 — ROLE-BASED ACCESS SYSTEM
+//   DELTA FITNESS SERVICE HUB v5 — ROLE-BASED ACCESS SYSTEM
 // ══════════════════════════════════════════════════════════════
 
 // ── TEAM OPTIONS (extend here) ──
@@ -2922,7 +2934,7 @@ async function clearAllData() {
   showDbLoading('Resetting database…');
   try {
     // Delete all rows from Supabase
-    await supabase.from(TABLE).delete().neq('id','__none__');
+    await supabaseClient.from(TABLE).delete().neq('id','__none__');
   } catch(e){ console.warn('DB clear failed:', e); }
   localStorage.removeItem(CACHE_KEY);
   localStorage.removeItem(STORAGE_KEY);
