@@ -1083,8 +1083,8 @@ body.app-active{padding-bottom:var(--bnav);}
   </div>
 </div>
 
-<!-- Supabase JS -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Supabase JS — explicit UMD build that exposes window.supabase -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <script>
 // ══════════════════════════════════════════════════════════════
@@ -1092,8 +1092,27 @@ body.app-active{padding-bottom:var(--bnav);}
 // ══════════════════════════════════════════════════════════════
 const SUPABASE_URL = 'https://eptihwvjbeulsjqvubgj.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_miOEZEBa_KfnuZU5s5qiFA__xSwutKE';
-// Use supabaseClient to avoid name clash with the window.supabase library object
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Guard: if CDN failed to load, create a no-op stub so the rest of the
+// app still works offline. All db.* calls will gracefully fail and fall
+// back to localStorage cache — login and UI stay fully functional.
+let supabaseClient;
+try {
+  if (typeof supabase !== 'undefined' && supabase.createClient) {
+    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  } else {
+    throw new Error('Supabase CDN not loaded');
+  }
+} catch(e) {
+  console.warn('Supabase unavailable — running in offline/local mode:', e.message);
+  // Stub: every method returns a safe failure so db.* gracefully falls back
+  const noop = () => ({ data: null, error: { message: 'offline' } });
+  const chain = { select:()=>chain, insert:()=>chain, update:()=>chain,
+                  delete:()=>chain, upsert:()=>chain, eq:()=>chain,
+                  order:()=>chain, limit:()=>chain,
+                  then: (r) => Promise.resolve(noop()) };
+  supabaseClient = { from: () => chain };
+}
 
 // ══════════════════════════════════════════════════════════════
 //   DATABASE LAYER
