@@ -1105,13 +1105,18 @@ try {
   }
 } catch(e) {
   console.warn('Supabase unavailable — running in offline/local mode:', e.message);
-  // Stub: every method returns a safe failure so db.* gracefully falls back
+  // Stub: every method returns a safe failure so db.* and storage.* gracefully fall back
   const noop = () => ({ data: null, error: { message: 'offline' } });
   const chain = { select:()=>chain, insert:()=>chain, update:()=>chain,
                   delete:()=>chain, upsert:()=>chain, eq:()=>chain,
-                  order:()=>chain, limit:()=>chain,
+                  order:()=>chain, limit:()=>chain, single:()=>chain,
                   then: (r) => Promise.resolve(noop()) };
-  supabaseClient = { from: () => chain };
+  const storageChain = {
+    upload:       () => Promise.resolve({ data:null, error:{ message:'offline' } }),
+    getPublicUrl: () => ({ data: { publicUrl: null } }),
+    from:         () => storageChain,
+  };
+  supabaseClient = { from: () => chain, storage: { from: () => storageChain } };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1226,8 +1231,81 @@ const db = {
   }
 };
 
-// ── Mapping: app object ↔ DB row ──
-// sanitize() strips all non-JSON-serializable properties via round-trip
+// ══════════════════════════════════════════════════════════════
+//   STORAGE LAYER — Supabase Storage bucket uploads
+//   Buckets: before-photos, after-photos, signatures
+//   Table:   ticket_checklist  (ticket_id PK, upsert on conflict)
+// ══════════════════════════════════════════════════════════════
+const CHECKLIST_TABLE = 'ticket_checklist';
+
+const storage = {
+
+  // ── Upload one File to a bucket, return public URL or null ──
+  async uploadFile(bucket, path, file) {
+    try {
+      const { error } = await supabaseClient.storage
+        .from(bucket)
+        .upload(path, file, { upsert: true, contentType: file.type || 'image/png' });
+      if (error) throw error;
+      const { data } = supabaseClient.storage.from(bucket).getPublicUrl(path);
+      return data?.publicUrl || null;
+    } catch(e) {
+      console.warn(`Storage upload failed (${bucket}/${path}):`, e.message);
+      return null;
+    }
+  },
+
+  // ── Upload a base64 dataURL as a PNG Blob ──
+  async uploadDataUrl(bucket, path, dataUrl) {
+    try {
+      const res  = await fetch(dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], path, { type: 'image/png' });
+      return await this.uploadFile(bucket, path, file);
+    } catch(e) {
+      console.warn(`DataURL upload failed (${bucket}/${path}):`, e.message);
+      return null;
+    }
+  },
+
+  // ── Upsert a checklist row for a ticket ──
+  async saveChecklist(ticketId, fields) {
+    try {
+      const row = sanitize({
+        ticket_id:    ticketId,
+        updated_at:   new Date().toISOString(),
+        updated_by:   currentUser?.employeeNo || currentUser?.id || null,
+        ...fields,
+      });
+      const { error } = await supabaseClient
+        .from(CHECKLIST_TABLE)
+        .upsert(row, { onConflict: 'ticket_id' });
+      if (error) throw error;
+      return true;
+    } catch(e) {
+      console.warn('Checklist save failed:', e.message);
+      return false;
+    }
+  },
+
+  // ── Load checklist row for a ticket ──
+  async loadChecklist(ticketId) {
+    try {
+      const { data, error } = await supabaseClient
+        .from(CHECKLIST_TABLE)
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .single();
+      if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+      return sanitize(data) || null;
+    } catch(e) {
+      console.warn('Checklist load failed:', e.message);
+      return null;
+    }
+  },
+};
+
+// ── sanitize() — strips all non-JSON-serializable properties via round-trip ──
 function sanitize(obj) {
   if (obj === null || obj === undefined) return null;
   try { return JSON.parse(JSON.stringify(obj)); } catch(e) { return null; }
@@ -1276,9 +1354,26 @@ function dbRowToTicket(row) {
 const CACHE_KEY = 'df_hub_tickets_v5_cache';
 function saveLocalCache(arr) {
   try {
-    // Always go through sanitize before storing — eliminates any Headers/Response objects
-    const plain = arr.map(t => ticketToDbRow(t));
-    localStorage.setItem(CACHE_KEY, JSON.stringify(plain));
+    // Strip File objects from photo arrays — they can't be JSON-serialized
+    const stripped = arr.map(t => {
+      const row = ticketToDbRow(t);
+      // visit_data photos may contain File refs — strip them
+      if (row.visit_data) {
+        ['beforePhotos','afterPhotos'].forEach(key => {
+          if (Array.isArray(row.visit_data[key])) {
+            row.visit_data[key] = row.visit_data[key].map(p => ({
+              name:       p.name       || '',
+              storageUrl: p.storageUrl || null,
+              previewUrl: p.storageUrl || p.dataUrl || p.previewUrl || null,
+              dataUrl:    p.storageUrl ? null : (p.dataUrl || null), // only keep base64 if no storageUrl
+              // file: intentionally omitted — not serializable
+            }));
+          }
+        });
+      }
+      return row;
+    });
+    localStorage.setItem(CACHE_KEY, JSON.stringify(stripped));
   } catch(e) {
     console.warn('Cache write failed:', e.message);
   }
@@ -2344,7 +2439,11 @@ function openChecklistModal(key) {
 }
 
 // ══════════════════════════════════════════════════
-//   PHOTO UPLOAD (reads/writes directly to ticket)
+//   PHOTO UPLOAD — Storage-aware
+//   Each photo entry: { previewUrl, storageUrl, name, file? }
+//   previewUrl = local blob URL for instant preview
+//   storageUrl = Supabase public URL (set after upload)
+//   file       = original File object (cleared after upload)
 // ══════════════════════════════════════════════════
 
 function handlePhotoUpload(event) {
@@ -2352,16 +2451,15 @@ function handlePhotoUpload(event) {
   if (!files.length) return;
   const vd  = activeVisit();
   const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
-  let loaded = 0;
   files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      arr.push({ dataUrl: e.target.result, name: file.name });
-      loaded++;
-      if (loaded === files.length) renderPhotoGrid();
-    };
-    reader.readAsDataURL(file);
+    arr.push({
+      previewUrl: URL.createObjectURL(file), // instant local preview
+      storageUrl: null,                       // filled in after upload
+      name:       file.name,
+      file:       file,                       // kept until saved, then cleared
+    });
   });
+  renderPhotoGrid();
   event.target.value = '';
 }
 
@@ -2378,34 +2476,82 @@ function renderPhotoGrid() {
     return;
   }
   if (empty) empty.style.display = 'none';
-  grid.innerHTML = arr.map((p, i) => `
+  grid.innerHTML = arr.map((p, i) => {
+    const src = p.storageUrl || p.previewUrl || p.dataUrl || '';
+    const uploaded = !!p.storageUrl;
+    return `
     <div class="photo-thumb">
-      <img src="${p.dataUrl}" alt="Photo ${i+1}"/>
+      <img src="${src}" alt="Photo ${i+1}"/>
+      ${uploaded ? '<div style="position:absolute;bottom:3px;left:3px;background:var(--ok);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;">✓</div>' : ''}
       <button class="photo-thumb-del" onclick="deletePhoto(${i})" title="Remove">✕</button>
-    </div>`).join('') +
-    `<label class="photo-add-btn" for="${currentPhotoType==='before'?'photo-file-input':'photo-file-input2'}">
-      <span>➕</span><span>Add more</span>
-    </label>`;
+    </div>`;
+  }).join('') +
+  `<label class="photo-add-btn" for="${currentPhotoType==='before'?'photo-file-input':'photo-file-input2'}">
+    <span>➕</span><span>Add more</span>
+  </label>`;
 }
 
 function deletePhoto(idx) {
   const vd  = activeVisit();
   const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
+  // Revoke blob URL to free memory if it was a local object URL
+  if (arr[idx]?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(arr[idx].previewUrl);
   arr.splice(idx, 1);
   renderPhotoGrid();
 }
 
-function savePhotos() {
-  const vd  = activeVisit();
-  const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
-  const count = arr.length;
+async function savePhotos() {
+  const vd     = activeVisit();
+  const arr    = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
+  const bucket = currentPhotoType === 'before' ? 'before-photos' : 'after-photos';
+  const count  = arr.length;
   if (!count) { showToast('Please add at least one photo'); return; }
+
+  // Show uploading state
+  const saveBtn = document.querySelector('#photos-modal .btn-p');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
+
+  // Upload any photos that don't yet have a storageUrl
+  const pending = arr.filter(p => !p.storageUrl && (p.file || p.previewUrl || p.dataUrl));
+  for (const photo of pending) {
+    const path = `${activeTechJobId}/${Date.now()}-${(photo.name||'photo.jpg').replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+    let url = null;
+    if (photo.file) {
+      url = await storage.uploadFile(bucket, path, photo.file);
+    } else if (photo.dataUrl) {
+      url = await storage.uploadDataUrl(bucket, path, photo.dataUrl);
+    }
+    if (url) {
+      photo.storageUrl = url;
+      // Revoke the local blob URL now that we have a permanent URL
+      if (photo.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(photo.previewUrl);
+      photo.previewUrl = url;
+      delete photo.file; // drop File ref — no longer needed
+    }
+    // If upload failed, keep local preview/dataUrl as fallback — still usable offline
+  }
+
   stampEdit(vd);
+  renderPhotoGrid(); // refresh to show ✓ badges on uploaded photos
+
+  // Build plain URL arrays for checklist table
+  const urls = arr.map(p => p.storageUrl || p.previewUrl || p.dataUrl || '').filter(Boolean);
+  const checklistField = currentPhotoType === 'before'
+    ? { before_photos: urls }
+    : { after_photos:  urls };
+
+  // Persist to ticket_checklist table
+  if (activeTechJobId) {
+    await storage.saveChecklist(activeTechJobId, checklistField);
+    // Also keep visit_data in sync on tickets table (stores URLs only, no Files)
+    db.saveVisit(activeTechJobId, vd);
+  }
+
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
   closeModal('photos-modal');
+  const uploaded = arr.filter(p => p.storageUrl).length;
   markChecklistDone(currentPhotoType, `${count} photo${count!==1?'s':''} · tap to edit`);
-  showToast(`✅ ${count} ${currentPhotoType} photo${count!==1?'s':''} saved`);
-  // Persist visit data to Supabase (fire and forget — photos can be large)
-  if (activeTechJobId) db.saveVisit(activeTechJobId, vd);
+  showToast(`✅ ${count} ${currentPhotoType} photo${count!==1?'s':''} saved${uploaded < count ? ' (some offline)' : ''}`);
 }
 
 // ══════════════════════════════════════════════════
@@ -2459,22 +2605,27 @@ function renderPartsList() {
     </div>`).join('');
 }
 
-function saveParts() {
+async function saveParts() {
   const vd    = activeVisit();
   const count = vd.parts.length;
   if (!count) { showToast('Please add at least one part'); return; }
   stampEdit(vd);
+  // Persist to ticket_checklist
+  if (activeTechJobId) {
+    const cleanParts = sanitize(vd.parts);
+    await storage.saveChecklist(activeTechJobId, { spare_parts: cleanParts });
+    db.saveVisit(activeTechJobId, vd);
+  }
   closeModal('parts-modal');
   markChecklistDone('parts', `${count} item${count!==1?'s':''} logged · tap to edit`);
   showToast(`✅ ${count} part${count!==1?'s':''} saved`);
-  if (activeTechJobId) db.saveVisit(activeTechJobId, vd);
 }
 
 // ══════════════════════════════════════════════════
 //   WORK NOTES
 // ══════════════════════════════════════════════════
 
-function saveNotes() {
+async function saveNotes() {
   const issue      = document.getElementById('note-issue').value.trim();
   const action     = document.getElementById('note-action').value.trim();
   const rec        = document.getElementById('note-rec').value.trim();
@@ -2484,10 +2635,16 @@ function saveNotes() {
   vd.notes   = { issue, action, rec, completion };
   const filled = [issue, action, rec, completion].filter(Boolean).length;
   stampEdit(vd);
+  // Persist to ticket_checklist
+  if (activeTechJobId) {
+    await storage.saveChecklist(activeTechJobId, {
+      work_notes:  sanitize(vd.notes),
+    });
+    db.saveVisit(activeTechJobId, vd);
+  }
   closeModal('notes-modal');
   markChecklistDone('notes', `${filled} field${filled!==1?'s':''} saved · tap to edit`);
   showToast('✅ Work notes saved');
-  if (activeTechJobId) db.saveVisit(activeTechJobId, vd);
 }
 
 // ══════════════════════════════════════════════════
@@ -2561,21 +2718,47 @@ function clearSignature() {
   if (preview) preview.style.display = 'none';
 }
 
-function saveSignature() {
+async function saveSignature() {
   if (!sigHasData) { showToast('Please ask customer to sign first'); return; }
-  const name = document.getElementById('sig-customer-name').value.trim();
-  const vd   = activeVisit();
-  vd.signature = sigCanvas.toDataURL('image/png');
-  vd.sigName   = name;
+  const name     = document.getElementById('sig-customer-name').value.trim();
+  const vd       = activeVisit();
+  const dataUrl  = sigCanvas.toDataURL('image/png');
+  vd.signature   = dataUrl;  // keep local copy as fallback
+  vd.sigName     = name;
   stampEdit(vd);
+
+  // Show uploading state
+  const saveBtn = document.querySelector('#sig-modal .btn-p');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
+
+  let signatureUrl = dataUrl; // default to base64 if upload fails
+
+  if (activeTechJobId) {
+    const path = `${activeTechJobId}/signature-${Date.now()}.png`;
+    const uploaded = await storage.uploadDataUrl('signatures', path, dataUrl);
+    if (uploaded) {
+      signatureUrl     = uploaded;
+      vd.signatureUrl  = uploaded; // store public URL alongside local copy
+    }
+    // Write to ticket_checklist
+    await storage.saveChecklist(activeTechJobId, {
+      signature_url: signatureUrl,
+      sig_name:      name || null,
+    });
+    db.saveVisit(activeTechJobId, vd);
+  }
+
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Signature'; }
+
+  // Update preview
   const preview = document.getElementById('sig-saved-preview');
   const img     = document.getElementById('sig-preview-img');
   if (preview) preview.style.display = 'block';
-  if (img)     img.src = vd.signature;
+  if (img)     img.src = dataUrl; // always show local preview for responsiveness
+
   closeModal('sig-modal');
   markChecklistDone('sig', name ? `Signed by ${name} · tap to edit` : 'Signed · tap to edit');
-  showToast('✅ Signature saved');
-  if (activeTechJobId) db.saveVisit(activeTechJobId, vd);
+  showToast(`✅ Signature saved${vd.signatureUrl ? '' : ' (offline)'}`);
 }
 
 // ── RESET VISIT UI (does NOT wipe ticket data) ──
@@ -2600,9 +2783,20 @@ function closeTechVisit() {
     t.status = 'completed';
     const vd = getTicketVisit(t.id);
     stampEdit(vd);
-    // Persist both status and final visit data to Supabase
+    // Final sync: update ticket status + full checklist snapshot
     db.updateStatus(t.id, 'completed');
     db.saveVisit(t.id, vd);
+    // Final checklist table snapshot (all fields at once)
+    const beforeUrls = (vd.beforePhotos||[]).map(p=>p.storageUrl||p.dataUrl||'').filter(Boolean);
+    const afterUrls  = (vd.afterPhotos||[]).map(p=>p.storageUrl||p.dataUrl||'').filter(Boolean);
+    storage.saveChecklist(t.id, {
+      before_photos: beforeUrls,
+      after_photos:  afterUrls,
+      spare_parts:   sanitize(vd.parts),
+      work_notes:    sanitize(vd.notes),
+      signature_url: vd.signatureUrl || vd.signature || null,
+      sig_name:      vd.sigName || null,
+    });
   }
   const closedId = activeTechJobId;
   activeTechJobId = null;
