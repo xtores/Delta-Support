@@ -1208,17 +1208,23 @@ const db = {
   async saveVisit(ticketId, visitData) {
     try {
       const cleanVisit = JSON.parse(JSON.stringify(visitData || {}));
-      // Normalise photo arrays: store ONLY plain URL strings — no objects, no File refs
+      // Normalise photo arrays: keep ONLY plain https:// URL strings
       ['beforePhotos','afterPhotos'].forEach(key => {
         if (Array.isArray(cleanVisit[key])) {
           cleanVisit[key] = cleanVisit[key]
             .map(p => {
-              if (typeof p === 'string') return p;
-              return p.storageUrl || p.dataUrl || null;
+              if (typeof p === 'string' && p.startsWith('http')) return p;
+              if (typeof p === 'object' && p !== null) {
+                const url = p.storageUrl || p.dataUrl || null;
+                return (url && url.startsWith('http')) ? url : null;
+              }
+              return null;
             })
             .filter(Boolean);
         }
       });
+      console.log('[DB saveVisit] beforePhotos:', cleanVisit.beforePhotos);
+      console.log('[DB saveVisit] afterPhotos:', cleanVisit.afterPhotos);
 
       const { error } = await supabaseClient
         .from(TABLE)
@@ -1552,16 +1558,23 @@ function saveLocalCache(arr) {
     const stripped = arr.map(t => {
       const row = ticketToDbRow(t);
       if (row.visit_data) {
+        // Normalize photo arrays: keep only plain URL strings.
+        // Objects with storageUrl → collapse to string.
+        // Objects without storageUrl (failed/pending upload) → DROP entirely.
+        // This ensures the cache never has partial objects that show as "0 photos".
         ['beforePhotos','afterPhotos'].forEach(key => {
           if (Array.isArray(row.visit_data[key])) {
-            row.visit_data[key] = row.visit_data[key].map(p => {
-              // Plain URL string — keep as-is (canonical format)
-              if (typeof p === 'string') return p;
-              // Object with storageUrl — collapse to plain string
-              if (p.storageUrl) return p.storageUrl;
-              // Object without storageUrl — keep minimal object (no File ref)
-              return { name: p.name || '', previewUrl: p.dataUrl || p.previewUrl || null };
-            });
+            row.visit_data[key] = row.visit_data[key]
+              .map(p => {
+                if (typeof p === 'string' && p.startsWith('http')) return p;
+                if (typeof p === 'object' && p !== null) {
+                  const url = p.storageUrl || p.dataUrl || null;
+                  // Only keep if it's a real persisted URL (not a blob:// or null)
+                  return (url && url.startsWith('http')) ? url : null;
+                }
+                return null;
+              })
+              .filter(Boolean);
           }
         });
       }
@@ -2760,8 +2773,12 @@ function openChecklistModal(key) {
 
 // ══════════════════════════════════════════════════
 //   PHOTO UPLOAD — Storage-aware
-//   In-memory before/after upload: objects with { previewUrl, storageUrl, name, file }
-//   After save: replaced with plain URL strings — the single canonical format.
+//   Temporary in-memory format (before Save Photos):
+//     { previewUrl: blob://, storageUrl: null, name, file }
+//   Canonical saved format (after Save Photos):
+//     plain URL string  "https://..."
+//   Rule: vd.beforePhotos / vd.afterPhotos are ALWAYS
+//         plain URL string arrays after savePhotos() completes.
 // ══════════════════════════════════════════════════
 
 function handlePhotoUpload(event) {
@@ -2771,12 +2788,14 @@ function handlePhotoUpload(event) {
   const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
   files.forEach(file => {
     arr.push({
-      previewUrl: URL.createObjectURL(file), // blob URL for instant preview (revoked after upload)
-      storageUrl: null,                       // set to public URL after upload
+      previewUrl: URL.createObjectURL(file),
+      storageUrl: null,
       name:       file.name,
-      file:       file,                       // held until Save Photos, then dropped
+      file:       file,
     });
   });
+  console.log('[handlePhotoUpload] Added files:', files.length, 'type:', currentPhotoType);
+  console.log('[handlePhotoUpload] Current array length:', arr.length, arr);
   renderPhotoGrid();
   event.target.value = '';
 }
@@ -2795,7 +2814,6 @@ function renderPhotoGrid() {
   }
   if (empty) empty.style.display = 'none';
   grid.innerHTML = arr.map((p, i) => {
-    // Support both plain URL strings (saved format) and temp objects (pre-save)
     const src      = (typeof p === 'string') ? p : (p.storageUrl || p.previewUrl || p.dataUrl || '');
     const uploaded = (typeof p === 'string') || !!p.storageUrl;
     return `
@@ -2828,78 +2846,96 @@ async function savePhotos() {
   const count  = arr.length;
   if (!count) { showToast('Please add at least one photo'); return; }
 
-  console.log(`[savePhotos] Starting upload of ${count} photo(s) to '${bucket}' for ticket ${activeTechJobId}`);
+  console.log(`[savePhotos] Starting: ${count} photo(s) → bucket '${bucket}' for ticket ${activeTechJobId}`);
 
   const saveBtn = document.querySelector('#photos-modal .btn-p');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
 
-  // Work on a copy index so we can replace objects with plain strings in-place
+  // ── Upload loop — replace each entry with a plain URL string in-place ──
   for (let i = 0; i < arr.length; i++) {
     const p = arr[i];
 
-    // Already a plain URL string — nothing to do
-    if (typeof p === 'string') {
-      console.log(`[savePhotos] Already a URL string: ${p}`);
+    // Already a plain https:// string — nothing to do
+    if (typeof p === 'string' && p.startsWith('http')) {
+      console.log(`[savePhotos] [${i}] Already URL string, skipping: ${p}`);
       continue;
     }
 
-    // Already uploaded (object with storageUrl) — collapse to plain string
-    if (p.storageUrl) {
-      console.log(`[savePhotos] Already uploaded, collapsing to URL: ${p.storageUrl}`);
+    // Object that already has storageUrl — collapse to plain string now
+    if (typeof p === 'object' && p !== null && p.storageUrl) {
+      console.log(`[savePhotos] [${i}] Collapsing storageUrl to string: ${p.storageUrl}`);
       if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
-      arr[i] = p.storageUrl;     // ← replace object with plain URL string
+      arr[i] = p.storageUrl;
       continue;
     }
 
-    // Need to upload
+    // Need to upload — build safe file path
+    if (typeof p !== 'object' || p === null) continue; // skip malformed entries
     const safeName = (p.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
     const filePath = `${activeTechJobId}/${Date.now()}-${safeName}`;
     let   url      = null;
 
     if (p.file instanceof File) {
-      console.log(`[savePhotos] Uploading File: ${p.name}`);
+      console.log(`[savePhotos] [${i}] Uploading File: ${p.name}`);
       url = await storage.uploadFile(bucket, filePath, p.file);
     } else if (typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:')) {
-      console.log(`[savePhotos] Uploading dataUrl: ${p.name}`);
+      console.log(`[savePhotos] [${i}] Uploading dataUrl: ${p.name}`);
       url = await storage.uploadDataUrl(bucket, filePath, p.dataUrl);
     } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:')) {
-      console.log(`[savePhotos] Uploading previewUrl (data): ${p.name}`);
+      console.log(`[savePhotos] [${i}] Uploading previewUrl as data: ${p.name}`);
       url = await storage.uploadDataUrl(bucket, filePath, p.previewUrl);
+    } else {
+      console.warn(`[savePhotos] [${i}] No uploadable source for entry:`, p);
     }
 
     if (url) {
       console.log(`[Storage] Upload OK:`, filePath);
       console.log(`[Storage] Public URL:`, url);
       if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
-      arr[i] = url;              // ← replace object with plain URL string
+      arr[i] = url; // ← canonical: replace object with plain URL string
     } else {
-      console.warn(`[savePhotos] ⚠️ Upload failed for ${p.name} — keeping local fallback`);
-      // Keep as object so it can be retried; won't be saved as a URL
+      console.warn(`[savePhotos] [${i}] Upload failed — entry dropped from saved URLs`);
+      // Mark so we can identify failed entries in the url-build step below
+      arr[i] = { ...p, _failed: true };
     }
   }
 
+  // ── Remove failed entries from the live array ──
+  // Keep only plain URL strings in the canonical array
+  const successUrls = arr.filter(p => typeof p === 'string' && p.startsWith('http'));
+  // Replace array contents with only successful URLs
+  arr.length = 0;
+  successUrls.forEach(u => arr.push(u));
+
+  // ── stampEdit AFTER upload loop — so saveLocalCache sees clean arrays ──
   stampEdit(vd);
+
+  // Log final state
+  console.log('[savePhotos] Final beforePhotos:', vd.beforePhotos);
+  console.log('[savePhotos] Final afterPhotos:',  vd.afterPhotos);
+
   renderPhotoGrid();
 
-  // Build plain URL array — only confirmed URL strings
-  const urls = arr.filter(p => typeof p === 'string' && p).map(p => p);
-  console.log('[Checklist] Saved image URLs:', urls);
+  console.log('[Checklist] Saved image URLs:', successUrls);
 
   const checklistField = currentPhotoType === 'before'
-    ? { before_photos: urls }
-    : { after_photos:  urls };
+    ? { before_photos: successUrls }
+    : { after_photos:  successUrls };
 
   if (activeTechJobId) {
     const ok = await storage.saveChecklist(activeTechJobId, checklistField);
     console.log(`[savePhotos] Checklist save ${ok ? '✅ OK' : '❌ FAILED'}`);
-    db.saveVisit(activeTechJobId, vd);
+    // db.saveVisit uses the already-clean vd — no further normalization needed
+    await db.saveVisit(activeTechJobId, vd);
+    console.log('[DB saveVisit] Saved visitData with', vd.beforePhotos.length, 'before +', vd.afterPhotos.length, 'after photos');
   }
 
   if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
   closeModal('photos-modal');
-  const uploadedCount = urls.length;
-  markChecklistDone(currentPhotoType, `${uploadedCount} photo${uploadedCount!==1?'s':''} · tap to edit`);
-  showToast(`✅ ${uploadedCount}/${count} photo${count!==1?'s':''} uploaded`);
+  const savedCount = successUrls.length;
+  // Update the checklist row counter from the live array
+  syncChecklistUI(vd);
+  showToast(`✅ ${savedCount}/${count} photo${count!==1?'s':''} uploaded`);
 }
 
 // ══════════════════════════════════════════════════
@@ -3922,6 +3958,8 @@ function buildActionReportHTML(t) {
   const afterPhotos  = (vd.afterPhotos  || []).length > 0
     ? vd.afterPhotos
     : [];
+  console.log('[Report] beforePhotos:', beforePhotos);
+  console.log('[Report] afterPhotos:', afterPhotos);
 
   // Signature
   const hasSig = !!vd.signature;
