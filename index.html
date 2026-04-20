@@ -1208,14 +1208,15 @@ const db = {
   async saveVisit(ticketId, visitData) {
     try {
       const cleanVisit = JSON.parse(JSON.stringify(visitData || {}));
-      // Strip File objects from photo arrays before sending to Supabase
+      // Normalise photo arrays: store ONLY plain URL strings — no objects, no File refs
       ['beforePhotos','afterPhotos'].forEach(key => {
         if (Array.isArray(cleanVisit[key])) {
-          cleanVisit[key] = cleanVisit[key].map(p => ({
-            name:       p.name       || '',
-            storageUrl: p.storageUrl || null,
-            previewUrl: p.storageUrl || p.previewUrl || null,
-          }));
+          cleanVisit[key] = cleanVisit[key]
+            .map(p => {
+              if (typeof p === 'string') return p;
+              return p.storageUrl || p.dataUrl || null;
+            })
+            .filter(Boolean);
         }
       });
 
@@ -1382,7 +1383,7 @@ const storage = {
       const uploadedPath = (uploadData && typeof uploadData.path === 'string')
         ? uploadData.path
         : filePath;
-      console.log(`[Storage] Upload OK — path: ${uploadedPath}`);
+      console.log(`[Storage] Upload OK:`, uploadedPath);
 
       // getPublicUrl is synchronous — returns { data: { publicUrl } }
       const { data: urlData } = supabaseClient.storage
@@ -1392,7 +1393,7 @@ const storage = {
       const publicUrl = (urlData && typeof urlData.publicUrl === 'string')
         ? urlData.publicUrl
         : null;
-      console.log(`[Storage] Public URL: ${publicUrl}`);
+      console.log(`[Storage] Public URL:`, publicUrl);
       return publicUrl;
 
     } catch(e) {
@@ -1548,25 +1549,24 @@ function dbRowToTicket(row) {
 const CACHE_KEY = 'df_hub_tickets_v5_cache';
 function saveLocalCache(arr) {
   try {
-    // Build plain rows, stripping File objects from photo arrays
     const stripped = arr.map(t => {
       const row = ticketToDbRow(t);
       if (row.visit_data) {
         ['beforePhotos','afterPhotos'].forEach(key => {
           if (Array.isArray(row.visit_data[key])) {
-            row.visit_data[key] = row.visit_data[key].map(p => ({
-              name:       p.name       || '',
-              storageUrl: p.storageUrl || null,
-              previewUrl: p.storageUrl || p.previewUrl || null,
-              // file: intentionally omitted — not serializable
-            }));
+            row.visit_data[key] = row.visit_data[key].map(p => {
+              // Plain URL string — keep as-is (canonical format)
+              if (typeof p === 'string') return p;
+              // Object with storageUrl — collapse to plain string
+              if (p.storageUrl) return p.storageUrl;
+              // Object without storageUrl — keep minimal object (no File ref)
+              return { name: p.name || '', previewUrl: p.dataUrl || p.previewUrl || null };
+            });
           }
         });
       }
       return row;
     });
-    // Final hard round-trip — eliminates any remaining non-serializable references
-    // before localStorage.setItem calls structuredClone internally on some browsers
     const safeJson = JSON.stringify(JSON.parse(JSON.stringify(stripped)));
     localStorage.setItem(CACHE_KEY, safeJson);
   } catch(e) {
@@ -2760,10 +2760,8 @@ function openChecklistModal(key) {
 
 // ══════════════════════════════════════════════════
 //   PHOTO UPLOAD — Storage-aware
-//   Each photo entry: { previewUrl, storageUrl, name, file? }
-//   previewUrl = local blob URL for instant preview
-//   storageUrl = Supabase public URL (set after upload)
-//   file       = original File object (cleared after upload)
+//   In-memory before/after upload: objects with { previewUrl, storageUrl, name, file }
+//   After save: replaced with plain URL strings — the single canonical format.
 // ══════════════════════════════════════════════════
 
 function handlePhotoUpload(event) {
@@ -2773,10 +2771,10 @@ function handlePhotoUpload(event) {
   const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
   files.forEach(file => {
     arr.push({
-      previewUrl: URL.createObjectURL(file), // instant local preview
-      storageUrl: null,                       // filled in after upload
+      previewUrl: URL.createObjectURL(file), // blob URL for instant preview (revoked after upload)
+      storageUrl: null,                       // set to public URL after upload
       name:       file.name,
-      file:       file,                       // kept until saved, then cleared
+      file:       file,                       // held until Save Photos, then dropped
     });
   });
   renderPhotoGrid();
@@ -2797,11 +2795,12 @@ function renderPhotoGrid() {
   }
   if (empty) empty.style.display = 'none';
   grid.innerHTML = arr.map((p, i) => {
-    const src = p.storageUrl || p.previewUrl || p.dataUrl || '';
-    const uploaded = !!p.storageUrl;
+    // Support both plain URL strings (saved format) and temp objects (pre-save)
+    const src      = (typeof p === 'string') ? p : (p.storageUrl || p.previewUrl || p.dataUrl || '');
+    const uploaded = (typeof p === 'string') || !!p.storageUrl;
     return `
     <div class="photo-thumb">
-      <img src="${src}" alt="Photo ${i+1}"/>
+      <img src="${src}" alt="Photo ${i+1}" referrerpolicy="no-referrer"/>
       ${uploaded ? '<div style="position:absolute;bottom:3px;left:3px;background:var(--ok);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;">✓</div>' : ''}
       <button class="photo-thumb-del" onclick="deletePhoto(${i})" title="Remove">✕</button>
     </div>`;
@@ -2814,8 +2813,10 @@ function renderPhotoGrid() {
 function deletePhoto(idx) {
   const vd  = activeVisit();
   const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
-  // Revoke blob URL to free memory if it was a local object URL
-  if (arr[idx]?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(arr[idx].previewUrl);
+  const p   = arr[idx];
+  if (p && typeof p === 'object' && p.previewUrl?.startsWith('blob:')) {
+    URL.revokeObjectURL(p.previewUrl);
+  }
   arr.splice(idx, 1);
   renderPhotoGrid();
 }
@@ -2827,56 +2828,62 @@ async function savePhotos() {
   const count  = arr.length;
   if (!count) { showToast('Please add at least one photo'); return; }
 
-  console.log(`[savePhotos] Starting upload of ${count} photo(s) to bucket '${bucket}' for ticket ${activeTechJobId}`);
+  console.log(`[savePhotos] Starting upload of ${count} photo(s) to '${bucket}' for ticket ${activeTechJobId}`);
 
-  // Show uploading state
   const saveBtn = document.querySelector('#photos-modal .btn-p');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
 
-  let uploadedCount = 0;
+  // Work on a copy index so we can replace objects with plain strings in-place
+  for (let i = 0; i < arr.length; i++) {
+    const p = arr[i];
 
-  // Upload each photo that doesn't yet have a storageUrl
-  for (const photo of arr) {
-    if (photo.storageUrl) {
-      console.log(`[savePhotos] Already uploaded: ${photo.name}`);
-      uploadedCount++;
+    // Already a plain URL string — nothing to do
+    if (typeof p === 'string') {
+      console.log(`[savePhotos] Already a URL string: ${p}`);
       continue;
     }
 
-    // Build a clean filename: ticketId/timestamp-originalname
-    const safeName = (photo.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `${activeTechJobId}/${Date.now()}-${safeName}`;
+    // Already uploaded (object with storageUrl) — collapse to plain string
+    if (p.storageUrl) {
+      console.log(`[savePhotos] Already uploaded, collapsing to URL: ${p.storageUrl}`);
+      if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
+      arr[i] = p.storageUrl;     // ← replace object with plain URL string
+      continue;
+    }
 
-    let url = null;
-    if (photo.file instanceof File) {
-      console.log(`[savePhotos] Uploading File object: ${photo.name}`);
-      url = await storage.uploadFile(bucket, filePath, photo.file);
-    } else if (typeof photo.dataUrl === 'string' && photo.dataUrl.startsWith('data:')) {
-      console.log(`[savePhotos] Uploading dataUrl: ${photo.name}`);
-      url = await storage.uploadDataUrl(bucket, filePath, photo.dataUrl);
-    } else if (typeof photo.previewUrl === 'string' && photo.previewUrl.startsWith('data:')) {
-      console.log(`[savePhotos] Uploading previewUrl as dataUrl: ${photo.name}`);
-      url = await storage.uploadDataUrl(bucket, filePath, photo.previewUrl);
+    // Need to upload
+    const safeName = (p.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `${activeTechJobId}/${Date.now()}-${safeName}`;
+    let   url      = null;
+
+    if (p.file instanceof File) {
+      console.log(`[savePhotos] Uploading File: ${p.name}`);
+      url = await storage.uploadFile(bucket, filePath, p.file);
+    } else if (typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:')) {
+      console.log(`[savePhotos] Uploading dataUrl: ${p.name}`);
+      url = await storage.uploadDataUrl(bucket, filePath, p.dataUrl);
+    } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:')) {
+      console.log(`[savePhotos] Uploading previewUrl (data): ${p.name}`);
+      url = await storage.uploadDataUrl(bucket, filePath, p.previewUrl);
     }
 
     if (url) {
-      photo.storageUrl = url;
-      if (photo.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(photo.previewUrl);
-      photo.previewUrl = url;
-      delete photo.file;
-      uploadedCount++;
-      console.log(`[savePhotos] ✅ Uploaded ${photo.name} → ${url}`);
+      console.log(`[Storage] Upload OK:`, filePath);
+      console.log(`[Storage] Public URL:`, url);
+      if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
+      arr[i] = url;              // ← replace object with plain URL string
     } else {
-      console.warn(`[savePhotos] ⚠️ Upload failed for ${photo.name} — kept locally`);
+      console.warn(`[savePhotos] ⚠️ Upload failed for ${p.name} — keeping local fallback`);
+      // Keep as object so it can be retried; won't be saved as a URL
     }
   }
 
   stampEdit(vd);
   renderPhotoGrid();
 
-  // Build clean URL array — prefer storageUrl, fall back to local dataUrl
-  const urls = arr.map(p => p.storageUrl || p.dataUrl || '').filter(Boolean);
-  console.log(`[savePhotos] Final URL array (${urls.length}):`, urls);
+  // Build plain URL array — only confirmed URL strings
+  const urls = arr.filter(p => typeof p === 'string' && p).map(p => p);
+  console.log('[Checklist] Saved image URLs:', urls);
 
   const checklistField = currentPhotoType === 'before'
     ? { before_photos: urls }
@@ -2890,7 +2897,8 @@ async function savePhotos() {
 
   if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
   closeModal('photos-modal');
-  markChecklistDone(currentPhotoType, `${count} photo${count!==1?'s':''} · tap to edit`);
+  const uploadedCount = urls.length;
+  markChecklistDone(currentPhotoType, `${uploadedCount} photo${uploadedCount!==1?'s':''} · tap to edit`);
   showToast(`✅ ${uploadedCount}/${count} photo${count!==1?'s':''} uploaded`);
 }
 
@@ -3907,9 +3915,13 @@ function buildActionReportHTML(t) {
   // Parts
   const hasParts = vd.parts.length > 0;
 
-  // Photos
-  const beforePhotos = vd.beforePhotos || [];
-  const afterPhotos  = vd.afterPhotos  || [];
+  // Photos — use checklist URL arrays if available, fall back to visitData objects
+  const beforePhotos = (vd.beforePhotos || []).length > 0
+    ? vd.beforePhotos
+    : [];
+  const afterPhotos  = (vd.afterPhotos  || []).length > 0
+    ? vd.afterPhotos
+    : [];
 
   // Signature
   const hasSig = !!vd.signature;
@@ -3928,6 +3940,7 @@ function buildActionReportHTML(t) {
 
   const photoThumb = (p) => {
     const src = getPhotoSrc(p);
+    console.log('[Report] Rendering photo src:', src || '(empty — placeholder shown)');
     return src
       ? `<div class="ar-photo-thumb"><img src="${src}" alt="photo" loading="lazy" referrerpolicy="no-referrer"/></div>`
       : `<div class="ar-photo-placeholder"><span>📷</span></div>`;
