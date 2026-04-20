@@ -1366,11 +1366,12 @@ const CHECKLIST_TABLE = 'ticket_checklist';
 
 const storage = {
 
-  // ── Upload one File object to a bucket. Returns public URL or null. ──
+  // ── Upload one File object to a bucket.
+  //    Returns { url: string } on success, or { url: null, error: string } on failure.
   async uploadFile(bucket, filePath, file) {
     console.log(`[Storage] Uploading to ${bucket}/${filePath} …`);
+    console.log(`[Storage] File info: name=${file?.name}, type=${file?.type}, size=${file?.size}`);
     try {
-      // Determine a safe content type — never send empty string to Supabase
       const contentType = (file.type && file.type !== '')
         ? file.type
         : (filePath.endsWith('.png') ? 'image/png' : 'image/jpeg');
@@ -1380,31 +1381,39 @@ const storage = {
         .upload(filePath, file, { upsert: true, contentType });
 
       if (uploadError) {
-        console.error(`[Storage] Upload error (${bucket}/${filePath}):`, uploadError.message);
-        return null;
+        console.error('[Storage ERROR full]:', uploadError);
+        console.error('[Storage ERROR message]:', uploadError?.message);
+        console.error('[Storage ERROR details]:', uploadError?.details);
+        console.error('[Storage ERROR status]:', uploadError?.statusCode || uploadError?.status);
+        console.error('[Storage ERROR bucket]:', bucket);
+        console.error('[Storage ERROR path]:', filePath);
+        const msg = uploadError?.message || 'Storage upload failed';
+        return { url: null, error: msg };
       }
 
-      // Extract only the plain path string — NEVER log or store the full uploadData object
-      // (it contains internal Headers references that cannot be cloned/serialized)
       const uploadedPath = (uploadData && typeof uploadData.path === 'string')
-        ? uploadData.path
-        : filePath;
-      console.log(`[Storage] Upload OK:`, uploadedPath);
+        ? uploadData.path : filePath;
+      console.log('[Storage] Upload OK:', uploadedPath);
 
-      // getPublicUrl is synchronous — returns { data: { publicUrl } }
       const { data: urlData } = supabaseClient.storage
         .from(bucket)
         .getPublicUrl(uploadedPath);
 
       const publicUrl = (urlData && typeof urlData.publicUrl === 'string')
-        ? urlData.publicUrl
-        : null;
-      console.log(`[Storage] Public URL:`, publicUrl);
-      return publicUrl;
+        ? urlData.publicUrl : null;
+
+      if (!publicUrl) {
+        console.error('[Storage] getPublicUrl returned empty — bucket may not be public');
+        return { url: null, error: 'Could not get public URL (check bucket is set to public)' };
+      }
+
+      console.log('[Storage] Public URL:', publicUrl);
+      return { url: publicUrl, error: null };
 
     } catch(e) {
-      console.error(`[Storage] Unexpected error (${bucket}/${filePath}):`, e.message);
-      return null;
+      console.error('[Storage ERROR full]:', e);
+      console.error('[Storage ERROR message]:', e?.message);
+      return { url: null, error: e?.message || 'Unexpected storage error' };
     }
   },
 
@@ -1412,7 +1421,6 @@ const storage = {
   async uploadDataUrl(bucket, filePath, dataUrl) {
     console.log(`[Storage] Converting dataUrl and uploading to ${bucket}/${filePath} …`);
     try {
-      // Use atob() instead of fetch(dataUrl) — fetch of data: URIs fails on iOS Safari
       const [header, base64] = dataUrl.split(',');
       const mimeMatch = header.match(/:(.*?);/);
       const mime = mimeMatch ? mimeMatch[1] : 'image/png';
@@ -1423,8 +1431,9 @@ const storage = {
       const file = new File([blob], filePath.split('/').pop(), { type: mime });
       return await this.uploadFile(bucket, filePath, file);
     } catch(e) {
-      console.error(`[Storage] DataUrl conversion failed (${bucket}/${filePath}):`, e);
-      return null;
+      console.error(`[Storage ERROR full]:`, e);
+      console.error(`[Storage ERROR message]:`, e?.message);
+      return { url: null, error: e?.message || 'DataUrl conversion failed' };
     }
   },
 
@@ -2847,9 +2856,14 @@ async function savePhotos() {
   if (!count) { showToast('Please add at least one photo'); return; }
 
   console.log(`[savePhotos] Starting: ${count} photo(s) → bucket '${bucket}' for ticket ${activeTechJobId}`);
+  console.log('[savePhotos] Raw array before upload:', arr.map((p, i) =>
+    typeof p === 'string' ? `[${i}] URL:${p}` : `[${i}] {name:${p?.name}, hasFile:${!!(p?.file instanceof File)}, storageUrl:${p?.storageUrl||null}}`
+  ));
 
   const saveBtn = document.querySelector('#photos-modal .btn-p');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
+
+  const failedReasons = [];
 
   // ── Upload loop — replace each entry with a plain URL string in-place ──
   for (let i = 0; i < arr.length; i++) {
@@ -2857,60 +2871,95 @@ async function savePhotos() {
 
     // Already a plain https:// string — nothing to do
     if (typeof p === 'string' && p.startsWith('http')) {
-      console.log(`[savePhotos] [${i}] Already URL string, skipping: ${p}`);
+      console.log(`[savePhotos] [${i}] Already URL string, skipping`);
       continue;
     }
 
-    // Object that already has storageUrl — collapse to plain string now
+    // Object that already has storageUrl — collapse to plain string
     if (typeof p === 'object' && p !== null && p.storageUrl) {
-      console.log(`[savePhotos] [${i}] Collapsing storageUrl to string: ${p.storageUrl}`);
+      console.log(`[savePhotos] [${i}] Collapsing existing storageUrl to string`);
       if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
       arr[i] = p.storageUrl;
       continue;
     }
 
-    // Need to upload — build safe file path
-    if (typeof p !== 'object' || p === null) continue; // skip malformed entries
-    const safeName = (p.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `${activeTechJobId}/${Date.now()}-${safeName}`;
-    let   url      = null;
-
-    if (p.file instanceof File) {
-      console.log(`[savePhotos] [${i}] Uploading File: ${p.name}`);
-      url = await storage.uploadFile(bucket, filePath, p.file);
-    } else if (typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:')) {
-      console.log(`[savePhotos] [${i}] Uploading dataUrl: ${p.name}`);
-      url = await storage.uploadDataUrl(bucket, filePath, p.dataUrl);
-    } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:')) {
-      console.log(`[savePhotos] [${i}] Uploading previewUrl as data: ${p.name}`);
-      url = await storage.uploadDataUrl(bucket, filePath, p.previewUrl);
-    } else {
-      console.warn(`[savePhotos] [${i}] No uploadable source for entry:`, p);
+    // Need to upload
+    if (typeof p !== 'object' || p === null) {
+      console.warn(`[savePhotos] [${i}] Skipping malformed entry:`, p);
+      continue;
     }
 
-    if (url) {
-      console.log(`[Storage] Upload OK:`, filePath);
-      console.log(`[Storage] Public URL:`, url);
-      if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
-      arr[i] = url; // ← canonical: replace object with plain URL string
+    const safeName = (p.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `${activeTechJobId}/${Date.now()}-${safeName}`;
+    let   result   = { url: null, error: 'No uploadable source found' };
+
+    if (p.file instanceof File) {
+      console.log(`[savePhotos] [${i}] Uploading File object: ${p.name}, size: ${p.file.size}, type: ${p.file.type}`);
+      result = await storage.uploadFile(bucket, filePath, p.file);
+    } else if (typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:')) {
+      console.log(`[savePhotos] [${i}] Uploading dataUrl: ${p.name}`);
+      result = await storage.uploadDataUrl(bucket, filePath, p.dataUrl);
+    } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:')) {
+      console.log(`[savePhotos] [${i}] Uploading previewUrl as data: ${p.name}`);
+      result = await storage.uploadDataUrl(bucket, filePath, p.previewUrl);
     } else {
-      console.warn(`[savePhotos] [${i}] Upload failed — entry dropped from saved URLs`);
-      // Mark so we can identify failed entries in the url-build step below
-      arr[i] = { ...p, _failed: true };
+      console.error('[savePhotos] Upload failed for entry:', p);
+      console.error('[savePhotos] Bucket:', bucket);
+      console.error('[savePhotos] Ticket:', activeTechJobId);
+      console.error('[savePhotos] Reason: no File, dataUrl, or data previewUrl available');
+    }
+
+    if (result.url) {
+      if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
+      arr[i] = result.url; // ← canonical plain URL string
+    } else {
+      const reason = result.error || 'Unknown error';
+      console.error('[savePhotos] Upload failed for entry:', p);
+      console.error('[savePhotos] Bucket:', bucket);
+      console.error('[savePhotos] Ticket:', activeTechJobId);
+      console.error('[savePhotos] Reason:', reason);
+      failedReasons.push(`${p.name || 'photo'}: ${reason}`);
+      arr[i] = { ...p, _failed: true, _failReason: reason };
     }
   }
 
-  // ── Remove failed entries from the live array ──
-  // Keep only plain URL strings in the canonical array
+  console.log('[savePhotos] Raw array after upload loop:', arr);
+
+  // ── Build successUrls from plain strings only ──
   const successUrls = arr.filter(p => typeof p === 'string' && p.startsWith('http'));
-  // Replace array contents with only successful URLs
+
+  console.log('[savePhotos] successUrls:', successUrls);
+
+  // ── If ZERO uploads succeeded — keep modal open, show real reason ──
+  if (successUrls.length === 0) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
+    const firstReason = failedReasons[0] || 'Upload failed — check Supabase Storage RLS policies for this bucket';
+    console.error('[savePhotos] All uploads failed. Reasons:', failedReasons);
+    showToast('Photo upload failed: ' + firstReason);
+    // Restore arr to original pending objects (strip _failed marker)
+    const originals = arr.filter(p => typeof p === 'object' && p !== null).map(p => {
+      const { _failed, _failReason, ...rest } = p;
+      return rest;
+    });
+    arr.length = 0;
+    originals.forEach(o => arr.push(o));
+    renderPhotoGrid();
+    return; // ← keep modal open for retry
+  }
+
+  // ── Partial failure — surface which ones failed ──
+  if (failedReasons.length > 0) {
+    showToast(`⚠️ ${failedReasons.length} photo(s) failed: ${failedReasons[0]}`);
+    console.error('[savePhotos] Partial failure reasons:', failedReasons);
+  }
+
+  // ── Replace live array with only successful URLs ──
   arr.length = 0;
   successUrls.forEach(u => arr.push(u));
 
   // ── stampEdit AFTER upload loop — so saveLocalCache sees clean arrays ──
   stampEdit(vd);
 
-  // Log final state
   console.log('[savePhotos] Final beforePhotos:', vd.beforePhotos);
   console.log('[savePhotos] Final afterPhotos:',  vd.afterPhotos);
 
@@ -2925,17 +2974,14 @@ async function savePhotos() {
   if (activeTechJobId) {
     const ok = await storage.saveChecklist(activeTechJobId, checklistField);
     console.log(`[savePhotos] Checklist save ${ok ? '✅ OK' : '❌ FAILED'}`);
-    // db.saveVisit uses the already-clean vd — no further normalization needed
     await db.saveVisit(activeTechJobId, vd);
     console.log('[DB saveVisit] Saved visitData with', vd.beforePhotos.length, 'before +', vd.afterPhotos.length, 'after photos');
   }
 
   if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
   closeModal('photos-modal');
-  const savedCount = successUrls.length;
-  // Update the checklist row counter from the live array
   syncChecklistUI(vd);
-  showToast(`✅ ${savedCount}/${count} photo${count!==1?'s':''} uploaded`);
+  showToast(`✅ ${successUrls.length}/${count} photo${count!==1?'s':''} uploaded`);
 }
 
 // ══════════════════════════════════════════════════
