@@ -740,11 +740,14 @@ body.app-active{padding-bottom:var(--bnav);}
           <div style="font-size:12px;opacity:.8" id="av-loc">Tap a job card and tap Start Visit</div>
         </div>
         <div class="sec-label">Checklist</div>
-        <!-- GPS Check-In (auto-done) -->
-        <div class="action-row done" id="act-checkin">
+        <!-- GPS Check-In — filled by captureGPS() on visit start -->
+        <div class="action-row" id="act-checkin">
           <div class="action-icon" style="background:var(--ok-bg)">📍</div>
-          <div class="action-info"><div class="action-title" style="color:var(--ok)">GPS Check-In ✓</div><div class="action-sub" id="act-checkin-sub">Checked in 09:32 AM · 0.2km from site</div></div>
-          <span>✅</span>
+          <div class="action-info">
+            <div class="action-title" id="act-checkin-title" style="color:var(--ok)">GPS Check-In</div>
+            <div class="action-sub" id="act-checkin-sub">Capturing location…</div>
+          </div>
+          <span id="act-checkin-icon" style="font-size:18px;color:var(--muted)">⏳</span>
         </div>
         <!-- Before Photos -->
         <div class="action-row" id="act-before" onclick="openChecklistModal('before')">
@@ -1420,36 +1423,43 @@ const storage = {
 
   // ── Upsert checklist row (insert or update, never duplicate) ──
   async saveChecklist(ticketId, fields) {
-    console.log(`[Checklist] Saving for ticket ${ticketId}:`, Object.keys(fields));
     try {
       if (!ticketId) throw new Error('No ticketId provided');
 
+      // Build row using ONLY the columns that exist in ticket_checklist.
+      // sig_name does NOT exist — it is never sent.
       const row = JSON.parse(JSON.stringify({
-        ticket_id:  ticketId,
-        updated_at: new Date().toISOString(),
-        updated_by: currentUser?.employeeNo || currentUser?.id || null,
-        ...fields,
+        ticket_id:     ticketId,
+        work_notes:    fields.work_notes    ?? null,
+        spare_parts:   fields.spare_parts   ?? [],
+        before_photos: fields.before_photos ?? [],
+        after_photos:  fields.after_photos  ?? [],
+        signature_url: fields.signature_url ?? '',
+        updated_by:    currentUser?.name || currentUser?.employeeNo || 'system',
+        updated_at:    new Date().toISOString(),
       }));
+
+      console.log('[Checklist] Saving for ticket', ticketId, row);
 
       const { error } = await supabaseClient
         .from(CHECKLIST_TABLE)
         .upsert(row, { onConflict: 'ticket_id', ignoreDuplicates: false });
 
       if (error) {
-        console.error('[DB ERROR full]:', error);
-        console.error('[DB ERROR message]:', error?.message);
-        console.error('[DB ERROR details]:', error?.details);
-        console.error('[DB ERROR hint]:', error?.hint);
-        console.error('[DB ERROR code]:', error?.code);
+        console.error('[Checklist ERROR FULL]:', error);
+        console.error('[Checklist ERROR message]:', error?.message);
+        console.error('[Checklist ERROR details]:', error?.details);
+        console.error('[Checklist ERROR hint]:', error?.hint);
+        console.error('[Checklist ERROR code]:', error?.code);
         return false;
       }
 
-      console.log(`[Checklist] ✅ Saved OK for ${ticketId}`);
+      console.log('[Checklist] ✅ Saved OK');
       return true;
 
     } catch(e) {
-      console.error('[DB ERROR full]:', e);
-      console.error('[DB ERROR message]:', e?.message);
+      console.error('[Checklist ERROR FULL]:', e);
+      console.error('[Checklist ERROR message]:', e?.message);
       return false;
     }
   },
@@ -2506,6 +2516,126 @@ function startTechVisit(id) {
   renderAll();
   goPage('active-visit');
   showToast(`Visit started for ${t.id}${isTeamJob?' · Team job — data shared':''}`);
+  // Capture GPS location — runs async, updates row when ready
+  captureGPS(id);
+}
+
+// ── Render the GPS checkin row with captured data ──
+function renderGPSRow(gps) {
+  const row   = document.getElementById('act-checkin');
+  const title = document.getElementById('act-checkin-title');
+  const sub   = document.getElementById('act-checkin-sub');
+  const icon  = document.getElementById('act-checkin-icon');
+  if (!row) return;
+
+  if (!gps) {
+    // Pending state
+    if (title) title.textContent = 'GPS Check-In';
+    if (sub)   sub.textContent   = 'Capturing location…';
+    if (icon)  { icon.textContent = '⏳'; icon.style.color = 'var(--muted)'; }
+    row.classList.remove('done');
+    return;
+  }
+
+  if (gps.error) {
+    // Failed / denied state
+    if (title) { title.textContent = 'GPS Check-In'; title.style.color = 'var(--warn)'; }
+    if (sub)   sub.textContent = gps.error;
+    if (icon)  { icon.textContent = '⚠️'; icon.style.color = 'var(--warn)'; }
+    row.classList.remove('done');
+    techCheckState.checkin = false;
+    return;
+  }
+
+  // Success state
+  const time  = gps.captured_at ? new Date(gps.captured_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '';
+  const accM  = gps.accuracy ? `${Math.round(gps.accuracy)}m` : '';
+  let   lines = [];
+  if (gps.label)              lines.push(gps.label);
+  lines.push(`Lat: ${gps.latitude.toFixed(6)}`);
+  lines.push(`Long: ${gps.longitude.toFixed(6)}`);
+  if (accM)                   lines.push(`Accuracy: ${accM}`);
+  if (time)                   lines.push(`Checked in: ${time}`);
+
+  if (title) { title.textContent = 'GPS Check-In ✓'; title.style.color = 'var(--ok)'; }
+  if (sub)   sub.innerHTML = lines.join(' · ');
+  if (icon)  { icon.textContent = '✅'; icon.style.color = 'var(--ok)'; }
+  row.classList.add('done');
+  techCheckState.checkin = true;
+}
+
+// ── Capture GPS location and save to visit data ──
+async function captureGPS(ticketId) {
+  if (!navigator.geolocation) {
+    console.warn('[GPS] Geolocation not supported by this browser');
+    const errGps = { error: 'GPS not supported on this device' };
+    const vd = getTicketVisit(ticketId);
+    vd.gps_location = errGps;
+    saveTickets(tickets);
+    renderGPSRow(errGps);
+    return;
+  }
+
+  console.log('[GPS] Requesting location…');
+
+  // Show pending state immediately
+  renderGPSRow(null);
+
+  const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const gpsData = {
+        latitude:    position.coords.latitude,
+        longitude:   position.coords.longitude,
+        accuracy:    position.coords.accuracy,
+        captured_at: Date.now(),
+        label:       null,
+      };
+      console.log('[GPS] Captured:', gpsData);
+
+      // Try reverse-geocode for a readable label (best-effort, no crash if it fails)
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?lat=${gpsData.latitude}&lon=${gpsData.longitude}&format=json`;
+        const res  = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+        const json = await res.json();
+        if (json?.display_name) {
+          // Shorten to neighbourhood / city level
+          const parts = json.display_name.split(',').slice(0, 3);
+          gpsData.label = parts.join(',').trim();
+        }
+      } catch(e) {
+        console.warn('[GPS] Reverse geocode failed (non-fatal):', e.message);
+      }
+
+      // Save to visit data on the ticket
+      const vd = getTicketVisit(ticketId);
+      vd.gps_location = gpsData;
+      saveTickets(tickets);
+
+      // Also persist to Supabase visit_data
+      db.saveVisit(ticketId, vd);
+
+      // Update the checklist UI row
+      renderGPSRow(gpsData);
+    },
+
+    (err) => {
+      let msg = 'Unable to capture location';
+      if (err.code === 1) msg = 'Location permission denied';
+      else if (err.code === 2) msg = 'Location unavailable';
+      else if (err.code === 3) msg = 'Location request timed out';
+      console.error('[GPS] Failed:', err.code, err.message);
+
+      const errGps = { error: msg };
+      const vd = getTicketVisit(ticketId);
+      vd.gps_location = errGps;
+      saveTickets(tickets);
+      renderGPSRow(errGps);
+    },
+
+    options
+  );
 }
 
 // ══════════════════════════════════════════════════════
@@ -2526,6 +2656,7 @@ const EMPTY_VISIT = () => ({
   notes: { issue:'', action:'', rec:'', completion:'' },
   signature: null, sigName: '',
   updatedBy: null, updatedAt: null, updatedByName: '',
+  gps_location: null, // { latitude, longitude, accuracy, captured_at, label }
 });
 
 function getTicketVisit(ticketId) {
@@ -2582,6 +2713,10 @@ function syncChecklistUI(vd) {
   else markChecklistPending('after', d.after);
   if (vd.signature) markChecklistDone('sig', vd.sigName ? `Signed by ${vd.sigName} · tap to edit` : 'Signed · tap to edit');
   else markChecklistPending('sig', d.sig);
+  // Restore GPS row if previously captured
+  if (vd.gps_location) {
+    renderGPSRow(vd.gps_location);
+  }
   // Audit line
   if (vd.updatedByName && vd.updatedAt) {
     const sub = document.getElementById('av-sub');
@@ -2950,7 +3085,6 @@ async function saveSignature() {
 
     const ok = await storage.saveChecklist(activeTechJobId, {
       signature_url: signatureUrl || null,
-      sig_name:      name || null,
     });
     console.log(`[saveSignature] Checklist save ${ok ? '✅ OK' : '❌ FAILED'}`);
     db.saveVisit(activeTechJobId, vd);
@@ -3002,7 +3136,6 @@ function closeTechVisit() {
       spare_parts:   sanitize(vd.parts),
       work_notes:    sanitize(vd.notes),
       signature_url: vd.signatureUrl || vd.signature || null,
-      sig_name:      vd.sigName || null,
     });
   }
   const closedId = activeTechJobId;
@@ -3011,6 +3144,15 @@ function closeTechVisit() {
   ['before','parts','notes','after','sig'].forEach(k =>
     markChecklistPending(k, {before:'Tap to capture',parts:'Tap to log',notes:'Tap to add',after:'Tap to capture',sig:'Tap to collect'}[k])
   );
+  // Reset GPS row to idle state for next visit
+  const gpsTitle = document.getElementById('act-checkin-title');
+  const gpsSub   = document.getElementById('act-checkin-sub');
+  const gpsIcon  = document.getElementById('act-checkin-icon');
+  const gpsRow   = document.getElementById('act-checkin');
+  if (gpsTitle) { gpsTitle.textContent = 'GPS Check-In'; gpsTitle.style.color = 'var(--ok)'; }
+  if (gpsSub)   gpsSub.textContent = 'Waiting for next visit…';
+  if (gpsIcon)  { gpsIcon.textContent = '📍'; gpsIcon.style.color = 'var(--muted)'; }
+  if (gpsRow)   gpsRow.classList.remove('done');
   document.getElementById('av-id').textContent   = 'No active job';
   document.getElementById('av-title').textContent = 'All visits complete!';
   document.getElementById('av-loc').textContent   = 'Go to My Jobs to start a new visit';
