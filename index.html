@@ -3919,9 +3919,19 @@ function buildActionReportHTML(t) {
   if (vd.notes.rec?.toLowerCase().includes('follow')) { resultLabel='Follow-up Required'; resultClass='pending'; resultIcon='🔁'; }
   else if (vd.notes.rec?.toLowerCase().includes('temp'))  { resultLabel='Temporary Fix'; resultClass='pending'; resultIcon='⚠️'; }
 
-  const photoThumb = (p) => p.dataUrl
-    ? `<div class="ar-photo-thumb"><img src="${p.dataUrl}" alt="photo"/></div>`
-    : `<div class="ar-photo-placeholder"><span>📷</span></div>`;
+  const getPhotoSrc = (p) => {
+    if (!p) return '';
+    if (typeof p === 'string') return p;
+    if (typeof p === 'object') return p.storageUrl || p.dataUrl || p.previewUrl || '';
+    return '';
+  };
+
+  const photoThumb = (p) => {
+    const src = getPhotoSrc(p);
+    return src
+      ? `<div class="ar-photo-thumb"><img src="${src}" alt="photo" loading="lazy" referrerpolicy="no-referrer"/></div>`
+      : `<div class="ar-photo-placeholder"><span>📷</span></div>`;
+  };
 
   const beforeGrid = beforePhotos.length
     ? `<div class="ar-photos-grid">${beforePhotos.map(photoThumb).join('')}</div>`
