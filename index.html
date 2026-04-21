@@ -97,14 +97,20 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 /* Password row appears inside login card */
 #login-pwd-row{display:none;margin-top:14px;}
 #login-pwd-row.visible{display:block;}
+.login-text-input{
+  width:100%;background:var(--bg);border:1.5px solid var(--bdr);border-radius:var(--rs);
+  padding:14px;font-family:inherit;font-size:15px;color:var(--txt);outline:none;
+  transition:border-color .15s;margin-bottom:6px;
+}
+.login-text-input:focus{border-color:var(--p);box-shadow:0 0 0 3px rgba(0,90,169,.08);}
+.login-text-input::placeholder{color:var(--light);}
 .login-pwd-input{
   width:100%;background:var(--bg);border:1.5px solid var(--bdr);border-radius:var(--rs);
   padding:14px;font-family:inherit;font-size:15px;color:var(--txt);outline:none;
-  transition:border-color .15s;text-align:center;letter-spacing:4px;
-  margin-bottom:6px;
+  transition:border-color .15s;margin-bottom:6px;
 }
 .login-pwd-input:focus{border-color:var(--p);box-shadow:0 0 0 3px rgba(0,90,169,.08);}
-.login-pwd-input::placeholder{letter-spacing:0;color:var(--light);}
+.login-pwd-input::placeholder{color:var(--light);}
 .login-pwd-hint{font-size:11px;color:var(--muted);text-align:center;margin-bottom:0;}
 #login-error{display:none;background:var(--err-bg);color:var(--err);border-radius:var(--rx);padding:8px 12px;font-size:13px;font-weight:600;text-align:center;margin-top:8px;}
 .login-header{
@@ -543,30 +549,32 @@ body.app-active{padding-bottom:var(--bnav);}
     <div class="login-header">
       <div class="login-hex">Δ</div>
       <div class="login-title">Delta Service Hub</div>
-      <div class="login-subtitle">Role-Based Access · Demo Mode</div>
+      <div class="login-subtitle">Field Service Management Platform</div>
     </div>
     <div class="login-body">
-      <div class="login-note">
-        🔒 Select an account below, then enter your password to log in.
+      <!-- ── USERNAME / EMPLOYEE NUMBER ── -->
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="login-label">Username or Employee Number</label>
+        <input class="login-text-input" id="login-username" type="text"
+               placeholder="Enter username or employee number"
+               autocomplete="username"
+               autocorrect="off" autocapitalize="off" spellcheck="false"
+               oninput="document.getElementById('login-error').style.display='none';updateLoginBtn()"
+               onkeydown="if(event.key==='Enter')document.getElementById('login-pwd').focus()"/>
       </div>
-      <label class="login-label">Choose Your Account</label>
-      <!-- Scrollable account list — not capped, natural height -->
-      <div id="user-selector"></div>
-
-      <!-- Password row — shown after account selection -->
-      <div id="login-pwd-row">
-        <label class="login-label" style="margin-top:14px;">Password</label>
+      <!-- ── PASSWORD ── -->
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="login-label">Password</label>
         <input class="login-pwd-input" id="login-pwd" type="password"
                placeholder="Enter password"
                autocomplete="current-password"
-               onkeydown="if(event.key==='Enter')doLogin()"
-               oninput="document.getElementById('login-error').style.display='none'"/>
-        <div class="login-pwd-hint" id="login-pwd-hint">Default password = employee number</div>
-        <div id="login-error">⛔ Incorrect password. Please try again.</div>
+               oninput="document.getElementById('login-error').style.display='none';updateLoginBtn()"
+               onkeydown="if(event.key==='Enter')doLogin()"/>
       </div>
+      <div id="login-error" style="margin-top:10px;">⛔ Incorrect username or password.</div>
 
-      <button class="login-btn" id="login-btn" disabled onclick="doLogin()" style="margin-top:16px;">
-        Log In to Service Hub →
+      <button class="login-btn" id="login-btn" disabled onclick="doLogin()" style="margin-top:20px;">
+        Log In →
       </button>
     </div>
   </div>
@@ -900,7 +908,10 @@ body.app-active{padding-bottom:var(--bnav);}
 
       <!-- ═══════════ ADMIN PANEL ═══════════ -->
       <div id="page-admin" class="page pad-page">
-        <div class="page-hdr"><div><div class="page-title">Admin <span>Panel</span></div><div class="page-sub">Full platform control</div></div></div>
+        <div class="page-hdr">
+          <div><div class="page-title">Admin <span>Panel</span></div><div class="page-sub">User management &amp; platform control</div></div>
+          <button class="btn btn-p btn-sm" onclick="openCreateUser()">+ New User</button>
+        </div>
         <div class="sec-label">User Accounts</div>
         <div class="card" style="margin:0 14px 14px;overflow:hidden;">
           <div id="admin-user-list"></div>
@@ -910,13 +921,12 @@ body.app-active{padding-bottom:var(--bnav);}
           <div class="kpi-card c-blue" style="padding:12px;"><div class="kpi-value" id="admin-total">0</div><div class="kpi-label">Total Tickets</div></div>
           <div class="kpi-card c-green" style="padding:12px;"><div class="kpi-value" id="admin-done">0</div><div class="kpi-label">Completed</div></div>
           <div class="kpi-card c-orange" style="padding:12px;"><div class="kpi-value" id="admin-open">0</div><div class="kpi-label">Open</div></div>
-          <div class="kpi-card c-teal" style="padding:12px;"><div class="kpi-value">${demoUsers.length}</div><div class="kpi-label">Total Users</div></div>
+          <div class="kpi-card c-teal" style="padding:12px;"><div class="kpi-value" id="admin-user-count">0</div><div class="kpi-label">Total Users</div></div>
         </div>
         <div class="sec-label">Danger Zone</div>
         <div style="padding:0 14px 14px;display:flex;flex-direction:column;gap:8px;">
           <button class="btn btn-outline" style="justify-content:flex-start;" onclick="clearAllData()">🗑️ Reset All Demo Data</button>
           <button class="btn btn-outline" style="justify-content:flex-start;" onclick="showToast('Audit log exported')">📋 Export Audit Log</button>
-          <button class="btn btn-outline" style="justify-content:flex-start;" onclick="showToast('Role permissions editor coming soon')">⚙️ Edit Role Permissions</button>
         </div>
       </div>
 
@@ -1701,41 +1711,20 @@ const teamOptions = [
 // ══════════════════════════════════════════════════════════════
 //   TECHNICIAN ACCOUNTS — Central list. Add new technicians here.
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+//   LEGACY SEED DATA — used as fallback if users table is empty
+// ══════════════════════════════════════════════════════════════
 const technicianAccounts = [
-  { employeeNo:'5304', name:'Naser Shah Khan', title:'Senior Technician', color:'#0d9488', password:'5304' },
-  { employeeNo:'3152', name:'Sandro',          title:'Senior Technician', color:'#2E75B6', password:'3152' },
-  { employeeNo:'6597', name:'Jose',            title:'Technician',        color:'#7c3aed', password:'6597' },
-  { employeeNo:'6635', name:'Belly Bellen',    title:'Technician',        color:'#d97706', password:'6635' },
-  { employeeNo:'6639', name:'Kenneth',         title:'Technician',        color:'#dc2626', password:'6639' },
-  { employeeNo:'6632', name:'Limuel Rivero',   title:'Technician',        color:'#059669', password:'6632' },
-  { employeeNo:'6887', name:'Mamerto Jr',      title:'Technician',        color:'#e11d48', password:'6887' },
-  { employeeNo:'6888', name:'Joan B. Pajarito',title:'Technician',        color:'#0284c7', password:'6888' },
-  { employeeNo:'6889', name:'Al Jhon V Torres',title:'Technician',        color:'#7c2d12', password:'6889' },
-  // Add future technicians here — password defaults to employeeNo if omitted
+  { employeeNo:'5304', name:'Naser Shah Khan', title:'Senior Technician', color:'#0d9488', password:'5304', region:'east' },
+  { employeeNo:'3152', name:'Sandro',          title:'Senior Technician', color:'#2E75B6', password:'3152', region:'east' },
+  { employeeNo:'6597', name:'Jose',            title:'Technician',        color:'#7c3aed', password:'6597', region:'east' },
+  { employeeNo:'6635', name:'Belly Bellen',    title:'Technician',        color:'#d97706', password:'6635', region:'central' },
+  { employeeNo:'6639', name:'Kenneth',         title:'Technician',        color:'#dc2626', password:'6639', region:'central' },
+  { employeeNo:'6632', name:'Limuel Rivero',   title:'Technician',        color:'#059669', password:'6632', region:'central' },
+  { employeeNo:'6887', name:'Mamerto Jr',      title:'Technician',        color:'#e11d48', password:'6887', region:'west' },
+  { employeeNo:'6888', name:'Joan B. Pajarito',title:'Technician',        color:'#0284c7', password:'6888', region:'west' },
+  { employeeNo:'6889', name:'Al Jhon V Torres',title:'Technician',        color:'#7c2d12', password:'6889', region:'west' },
 ];
-
-// Non-tech demo users (password = 'demo' for all)
-const NON_TECH_PASSWORDS = { u1:'demo', u2:'demo', u3:'demo', u5:'demo' };
-
-// Helper: look up a technician by employee number or name
-function getTechByEmpNo(empNo) {
-  return technicianAccounts.find(t => t.employeeNo === String(empNo));
-}
-function getTechByName(name) {
-  return technicianAccounts.find(t => t.name === name);
-}
-// Get display name for a technician id (emp no or name string)
-function techDisplayName(idOrName) {
-  const t = getTechByEmpNo(idOrName) || getTechByName(idOrName);
-  return t ? t.name : (idOrName || 'Unassigned');
-}
-// Get color for a technician
-function techColor(idOrName) {
-  const t = getTechByEmpNo(idOrName) || getTechByName(idOrName);
-  return t ? t.color : '#6b7280';
-}
-
-// ── DEMO USERS — non-technician roles ──
 const nonTechUsers = [
   { id:'u1', name:'Ahmed Consumer',  email:'requester.consumer@demo.com',   role:'requester_consumer',   avatar:'AC', color:'#1d4ed8', roleLabel:'Requester — Consumer Sales' },
   { id:'u2', name:'Sara Commercial', email:'requester.commercial@demo.com', role:'requester_commercial', avatar:'SC', color:'#4338ca', roleLabel:'Requester — Commercial Sales' },
@@ -1743,21 +1732,293 @@ const nonTechUsers = [
   { id:'u5', name:'Admin User',      email:'admin@demo.com',                role:'admin',                avatar:'AD', color:'#dc2626', roleLabel:'System Administrator' },
 ];
 
-// Build full demoUsers by merging non-tech users + all technician accounts
-const demoUsers = [
-  ...nonTechUsers,
-  ...technicianAccounts.map(t => ({
-    id:        't_' + t.employeeNo,
-    name:      t.name,
-    email:     `${t.employeeNo}@delta-tech.com`,
-    role:      'technician',
-    avatar:    t.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
-    color:     t.color,
-    roleLabel: `${t.employeeNo} — ${t.name} — ${t.title}`,
-    employeeNo: t.employeeNo,
-    title:     t.title,
-  }))
-];
+// ══════════════════════════════════════════════════════════════
+//   USERS TABLE INTEGRATION  (v8)
+//
+//   Supabase table: users
+//   CREATE TABLE IF NOT EXISTS users (
+//     id          text primary key,
+//     full_name   text not null,
+//     employee_number text unique,
+//     username    text unique not null,
+//     password    text not null,
+//     role        text not null default 'technician',
+//     region      text,
+//     supervisor_id text,
+//     manager_id  text,
+//     is_active   boolean default true,
+//     color       text default '#005AA9',
+//     created_at  timestamptz default now(),
+//     updated_at  timestamptz default now()
+//   );
+//   -- RLS: allow anon SELECT/INSERT/UPDATE (for now)
+//   CREATE POLICY "anon_all" ON users FOR ALL TO anon USING (true) WITH CHECK (true);
+// ══════════════════════════════════════════════════════════════
+const USERS_TABLE = 'users';
+
+// In-memory user registry (loaded from Supabase + seeded from technicianAccounts as fallback)
+let allUsers = [];
+
+// ── Load users from Supabase ──
+async function loadUsersFromDB() {
+  if (!supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient.from(USERS_TABLE).select('*');
+    if (error) throw error;
+    if (data && data.length > 0) {
+      allUsers = data;
+      console.log('[Auth] Loaded', allUsers.length, 'users from DB');
+    } else {
+      // Table empty — seed built-in accounts into DB
+      await seedBuiltInUsers();
+    }
+  } catch(e) {
+    console.warn('[Auth] Could not load users from DB, using built-in fallback:', e.message);
+    // Fall back to in-memory users built from legacy arrays
+    allUsers = buildFallbackUsers();
+  }
+}
+
+// ── Seed built-in accounts into users table ──
+async function seedBuiltInUsers() {
+  const seed = buildFallbackUsers();
+  try {
+    const { error } = await supabaseClient
+      .from(USERS_TABLE)
+      .upsert(seed, { onConflict: 'id' });
+    if (error) console.warn('[Auth] Seed upsert error:', error.message);
+    else {
+      allUsers = seed;
+      console.log('[Auth] Seeded', seed.length, 'built-in users into DB');
+    }
+  } catch(e) {
+    allUsers = seed;
+    console.warn('[Auth] Seed failed, using in-memory:', e.message);
+  }
+}
+
+// ── Build fallback user list from legacy technicianAccounts + nonTechUsers ──
+function buildFallbackUsers() {
+  const mgmtMap = {
+    u1: { role:'requester_consumer',   region:null },
+    u2: { role:'requester_commercial', region:null },
+    u3: { role:'technical_manager',    region:null },
+    u5: { role:'admin',                region:null },
+  };
+  const mgmt = nonTechUsers.map(u => ({
+    id:              u.id,
+    full_name:       u.name,
+    employee_number: u.id,
+    username:        u.email.split('@')[0],
+    password:        'demo',
+    role:            mgmtMap[u.id]?.role || u.role,
+    region:          mgmtMap[u.id]?.region || null,
+    supervisor_id:   null,
+    manager_id:      null,
+    is_active:       true,
+    color:           u.color,
+    created_at:      new Date().toISOString(),
+    updated_at:      new Date().toISOString(),
+  }));
+  const techs = technicianAccounts.map(t => ({
+    id:              't_' + t.employeeNo,
+    full_name:       t.name,
+    employee_number: t.employeeNo,
+    username:        t.employeeNo,
+    password:        t.password || t.employeeNo,
+    role:            'technician',
+    region:          t.region || 'east',
+    supervisor_id:   null,
+    manager_id:      null,
+    is_active:       true,
+    color:           t.color,
+    created_at:      new Date().toISOString(),
+    updated_at:      new Date().toISOString(),
+  }));
+  return [...mgmt, ...techs];
+}
+
+// ── Map a DB user row to the internal currentUser shape ──
+function dbUserToCurrentUser(u) {
+  const role = u.role || 'technician';
+  const cfg  = ROLE_CONFIG[role] || ROLE_CONFIG.technician;
+  return {
+    id:          u.id,
+    name:        u.full_name,
+    employeeNo:  u.employee_number || u.id,
+    email:       `${u.username}@delta-tech.com`,
+    role,
+    region:      u.region || null,
+    supervisorId: u.supervisor_id || null,
+    managerId:   u.manager_id    || null,
+    avatar:      initials(u.full_name),
+    color:       u.color || cfg.color || '#005AA9',
+    roleLabel:   cfg.label || role,
+    title:       u.title || '',
+    is_active:   u.is_active !== false,
+  };
+}
+
+// Non-tech demo users (legacy fallback)
+const NON_TECH_PASSWORDS = { u1:'demo', u2:'demo', u3:'demo', u5:'demo' };
+
+// ── LEGACY ARRAYS kept for seed fallback & ticket assignee lookups ──
+function getTechByEmpNo(empNo) {
+  // First check live allUsers; fall back to technicianAccounts
+  const u = allUsers.find(u => u.employee_number === String(empNo) && u.role === 'technician');
+  if (u) return { employeeNo: u.employee_number, name: u.full_name, color: u.color || '#6b7280', title: u.title || 'Technician' };
+  return technicianAccounts.find(t => t.employeeNo === String(empNo));
+}
+function getTechByName(name) {
+  const u = allUsers.find(u => u.full_name === name && u.role === 'technician');
+  if (u) return { employeeNo: u.employee_number, name: u.full_name, color: u.color || '#6b7280' };
+  return technicianAccounts.find(t => t.name === name);
+}
+function techDisplayName(idOrName) {
+  const t = getTechByEmpNo(idOrName) || getTechByName(idOrName);
+  return t ? t.name : (idOrName || 'Unassigned');
+}
+function techColor(idOrName) {
+  const t = getTechByEmpNo(idOrName) || getTechByName(idOrName);
+  return t ? t.color : '#6b7280';
+}
+// Get all technician accounts (from live users, fall back to legacy array)
+function getAllTechnicians() {
+  const live = allUsers.filter(u => u.role === 'technician' && u.is_active !== false);
+  if (live.length > 0) return live.map(u => ({
+    employeeNo: u.employee_number || u.id,
+    name: u.full_name,
+    color: u.color || '#6b7280',
+    title: u.title || 'Technician',
+    region: u.region || null,
+  }));
+  return technicianAccounts;
+}
+// Region-filtered technicians (for supervisor role)
+function getTechsForCurrentUser() {
+  const techs = getAllTechnicians();
+  if (!currentUser) return techs;
+  if (['admin','technical_manager'].includes(currentUser.role)) return techs;
+  if (currentUser.role === 'regional_supervisor' && currentUser.region) {
+    return techs.filter(t => t.region === currentUser.region);
+  }
+  return techs;
+}
+
+// Build demoUsers shape from allUsers (used by renderAdmin and legacy spots)
+function getDemoUsers() {
+  return allUsers.map(u => ({
+    id:          u.id,
+    name:        u.full_name,
+    email:       `${u.username}@delta-tech.com`,
+    role:        u.role,
+    avatar:      initials(u.full_name),
+    color:       u.color || '#6b7280',
+    roleLabel:   u.full_name + (u.employee_number ? ' · ' + u.employee_number : ''),
+    employeeNo:  u.employee_number || u.id,
+    title:       u.title || '',
+    region:      u.region || null,
+    is_active:   u.is_active !== false,
+  }));
+}
+
+// ══════════════════════════════
+//   LOGIN SYSTEM  (v8 — real auth)
+// ══════════════════════════════
+
+function updateLoginBtn() {
+  const u = (document.getElementById('login-username')?.value || '').trim();
+  const p = (document.getElementById('login-pwd')?.value || '').trim();
+  const btn = document.getElementById('login-btn');
+  if (btn) btn.disabled = !(u && p);
+}
+
+function renderLoginScreen() {
+  // No-op in v8 — login screen is static HTML
+}
+
+function selectUser() { /* legacy stub */ }
+
+async function doLogin() {
+  const usernameEl = document.getElementById('login-username');
+  const pwdEl      = document.getElementById('login-pwd');
+  const errEl      = document.getElementById('login-error');
+  const btn        = document.getElementById('login-btn');
+
+  const identifier = (usernameEl?.value || '').trim().toLowerCase();
+  const password   = (pwdEl?.value || '').trim();
+  if (!identifier || !password) return;
+
+  btn.disabled    = true;
+  btn.textContent = 'Logging in…';
+  errEl.style.display = 'none';
+
+  // ── Load users if not yet loaded ──
+  if (allUsers.length === 0) await loadUsersFromDB();
+
+  // ── Find user by username OR employee_number (case-insensitive) ──
+  const found = allUsers.find(u =>
+    (u.username?.toLowerCase() === identifier ||
+     u.employee_number?.toLowerCase() === identifier)
+  );
+
+  if (!found) {
+    console.log('[Auth] login failure — user not found:', identifier);
+    errEl.textContent = '⛔ Username or employee number not found.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Log In →';
+    return;
+  }
+  if (found.is_active === false) {
+    console.log('[Auth] login failure — account disabled:', identifier);
+    errEl.textContent = '⛔ This account has been disabled. Contact your administrator.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Log In →';
+    return;
+  }
+  if (found.password !== password) {
+    console.log('[Auth] login failure — wrong password:', identifier);
+    errEl.textContent = '⛔ Incorrect password. Please try again.';
+    errEl.style.display = 'block';
+    pwdEl.value = '';
+    pwdEl.focus();
+    btn.disabled = false;
+    btn.textContent = 'Log In →';
+    return;
+  }
+
+  // ── Success ──
+  currentUser = dbUserToCurrentUser(found);
+  console.log('[Auth] login success', currentUser.name, '|', currentUser.role, '| region:', currentUser.region || 'all');
+
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: found.id }));
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app-shell').classList.add('visible');
+  document.body.classList.add('app-active');
+  btn.textContent = 'Log In →';
+  bootApp();
+}
+
+function doLogout() {
+  localStorage.removeItem(SESSION_KEY);
+  currentUser = null;
+  // Reset login form
+  const u = document.getElementById('login-username');
+  const p = document.getElementById('login-pwd');
+  const e = document.getElementById('login-error');
+  const b = document.getElementById('login-btn');
+  if (u) u.value = '';
+  if (p) p.value = '';
+  if (e) e.style.display = 'none';
+  if (b) { b.disabled = true; b.textContent = 'Log In →'; }
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app-shell').classList.remove('visible');
+  document.body.classList.remove('app-active');
+  document.getElementById('login-screen').scrollTop = 0;
+  console.log('[Auth] logged out');
+}
 
 // ── ROLE CONFIG ──
 // pages: which pages are accessible; bnav: bottom nav items; canAssign, canChangeStatus, etc.
@@ -1830,6 +2091,28 @@ const ROLE_CONFIG = {
     ],
     canAssign: true, canChangeStatus: true, canCloseTicket: true,
     canManageAMC: true, canEditInventory: false, canViewAllTickets: true,
+    canCreateRequest: true, canSeeAssignBtn: true,
+  },
+  // ── REGIONAL SUPERVISOR ── sees only their region
+  regional_supervisor: {
+    label:'Regional Supervisor', color:'#0d9488',
+    pages: ['dashboard','tickets','schedule','reports'],
+    bnav: [
+      {id:'dashboard', icon:'📊', label:'Dashboard'},
+      {id:'tickets',   icon:'🎫', label:'Tickets'},
+      {id:'schedule',  icon:'📅', label:'Schedule'},
+      {id:'reports',   icon:'📋', label:'Reports'},
+    ],
+    menuSections: [
+      { label:'Operations', items:[
+        {page:'dashboard', icon:'📊', label:'Dashboard'},
+        {page:'tickets',   icon:'🎫', label:'Regional Tickets', badge:'open'},
+        {page:'schedule',  icon:'📅', label:'Tech Schedule'},
+        {page:'reports',   icon:'📋', label:'Reports'},
+      ]}
+    ],
+    canAssign: true, canChangeStatus: true, canCloseTicket: true,
+    canManageAMC: false, canEditInventory: false, canViewAllTickets: false,
     canCreateRequest: true, canSeeAssignBtn: true,
   },
   technician: {
@@ -1915,6 +2198,17 @@ const SEED_TICKETS = [
 
 // ── APP STATE ──
 let tickets = loadTickets(); // starts with local cache; refreshed from Supabase after boot
+// ── Role helpers ──
+function isManagerOrAdmin() {
+  return ['technical_manager','admin'].includes(currentUser?.role);
+}
+function isTechnician() {
+  return currentUser?.role === 'technician';
+}
+function canSeeTiming() {
+  return isManagerOrAdmin(); // Timing HIDDEN from technician per privacy rule
+}
+
 let currentUser = null;
 let currentFilter = 'all';
 let currentSearch = '';
@@ -1982,119 +2276,8 @@ function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 function handleModalBg(e,id){if(e.target.id===id)closeModal(id);}
 
-// ══════════════════════════════
-//   LOGIN SYSTEM
-// ══════════════════════════════
+// ── Legacy selectedUserId kept for backward compat (unused in v8) ──
 let selectedUserId = null;
-
-function renderLoginScreen() {
-  const sel = document.getElementById('user-selector');
-  const mgmtUsers = demoUsers.filter(u => u.role !== 'technician');
-  const techUsers  = demoUsers.filter(u => u.role === 'technician');
-
-  const renderCard = u => `
-    <div class="user-card" id="uc-${u.id}" onclick="selectUser('${u.id}')">
-      <div class="user-card-avatar" style="background:${u.color};width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;color:#fff;flex-shrink:0;">${u.avatar}</div>
-      <div style="flex:1;min-width:0;">
-        <div class="user-card-name" style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.roleLabel}</div>
-        <div class="user-card-email" style="font-size:11px;color:var(--muted);margin-top:1px;">${u.email}</div>
-      </div>
-      ${u.role === 'technician'
-        ? `<div style="font-size:10px;font-weight:700;padding:3px 7px;border-radius:10px;background:var(--ok-bg);color:var(--ok);white-space:nowrap;flex-shrink:0;">${u.title||'Tech'}</div>`
-        : `<div style="font-size:10px;font-weight:700;padding:3px 7px;border-radius:10px;background:var(--warn-bg);color:var(--warn);white-space:nowrap;flex-shrink:0;">${ROLE_CONFIG[u.role]?.label||'User'}</div>`}
-    </div>`;
-
-  sel.innerHTML =
-    `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);padding:4px 2px 8px;">Management & Admin</div>` +
-    mgmtUsers.map(renderCard).join('') +
-    `<div style="height:1px;background:var(--bdr);margin:14px 0 10px;"></div>
-     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);padding:0 2px 8px;">Field Technicians (${techUsers.length})</div>` +
-    techUsers.map(renderCard).join('');
-}
-
-function selectUser(id) {
-  selectedUserId = id;
-  document.querySelectorAll('.user-card').forEach(c => c.classList.remove('selected'));
-  document.getElementById('uc-'+id)?.classList.add('selected');
-
-  // Show password row for all users
-  const pwdRow  = document.getElementById('login-pwd-row');
-  const pwdHint = document.getElementById('login-pwd-hint');
-  const pwdInput = document.getElementById('login-pwd');
-  const errEl   = document.getElementById('login-error');
-
-  pwdRow.classList.add('visible');
-  errEl.style.display = 'none';
-  pwdInput.value = '';
-
-  const user = demoUsers.find(u=>u.id===id);
-  if (user?.role === 'technician') {
-    pwdHint.textContent = `Default password for ${user.employeeNo}: use employee number`;
-  } else {
-    pwdHint.textContent = 'Demo password: demo';
-  }
-
-  document.getElementById('login-btn').disabled = false;
-
-  // Scroll the password row into view on mobile
-  setTimeout(() => pwdInput.scrollIntoView({behavior:'smooth',block:'center'}), 150);
-  setTimeout(() => pwdInput.focus(), 200);
-}
-
-function doLogin() {
-  if (!selectedUserId) return;
-  const user   = demoUsers.find(u=>u.id===selectedUserId);
-  if (!user) return;
-
-  const pwdInput = document.getElementById('login-pwd');
-  const entered  = pwdInput.value.trim();
-  const errEl    = document.getElementById('login-error');
-
-  // Validate password
-  let correct = false;
-  if (user.role === 'technician') {
-    const tech = getTechByEmpNo(user.employeeNo);
-    const expected = tech?.password || user.employeeNo;
-    correct = entered === expected;
-  } else {
-    const expected = NON_TECH_PASSWORDS[user.id] || 'demo';
-    correct = entered === expected;
-  }
-
-  if (!correct) {
-    errEl.textContent = `⛔ Incorrect password. Try "${user.role === 'technician' ? user.employeeNo : 'demo'}"`;
-    errEl.style.display = 'block';
-    pwdInput.focus();
-    pwdInput.select();
-    return;
-  }
-
-  // Successful login
-  errEl.style.display = 'none';
-  currentUser = user;
-  localStorage.setItem(SESSION_KEY, JSON.stringify({userId:user.id}));
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app-shell').classList.add('visible');
-  document.body.classList.add('app-active');
-  bootApp();
-}
-
-function doLogout() {
-  localStorage.removeItem(SESSION_KEY);
-  currentUser = null;
-  selectedUserId = null;
-  // Reset login form
-  document.querySelectorAll('.user-card').forEach(c=>c.classList.remove('selected'));
-  document.getElementById('login-pwd').value = '';
-  document.getElementById('login-pwd-row').classList.remove('visible');
-  document.getElementById('login-error').style.display = 'none';
-  document.getElementById('login-btn').disabled = true;
-  document.getElementById('login-screen').classList.remove('hidden');
-  document.getElementById('app-shell').classList.remove('visible');
-  document.body.classList.remove('app-active');
-  // Scroll login screen back to top
-  document.getElementById('login-screen').scrollTop = 0;
-}
 
 // ══════════════════════════════
 //   APP BOOT PER ROLE
@@ -2270,7 +2453,7 @@ function renderDashboard() {
       filterDiv.id = 'dash-filter-chips';
       filterDiv.style.cssText = 'padding:0 14px 4px;display:flex;flex-direction:column;gap:8px;margin-top:8px;';
       const branches = [...new Set(tickets.map(t=>t.branch).filter(Boolean))];
-      const techs = technicianAccounts.slice(0, 5); // show first 5 techs to avoid overflow
+      const techs = getTechsForCurrentUser().slice(0, 5); // show first 5 techs to avoid overflow
       filterDiv.innerHTML = `
         <div>
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Filter by Branch</div>
@@ -2372,6 +2555,10 @@ function getFilteredTickets() {
   if (role==='technician') {
     const empNo = currentUser?.employeeNo;
     list = list.filter(t => getAssignedArr(t).includes(empNo));
+  }
+  // ── Regional Supervisor sees only their region's tickets ──
+  if (role === 'regional_supervisor' && currentUser?.region) {
+    list = list.filter(t => t.region === currentUser.region);
   }
   if (currentSearch) {
     const q=currentSearch.toLowerCase();
@@ -2605,7 +2792,7 @@ function renderSchedule() {
 function renderWorkload() {
   const el = document.getElementById('workload-bars');
   if (!el) return;
-  const counts = technicianAccounts.map(tech => ({
+  const counts = getTechsForCurrentUser().map(tech => ({
     tech,
     c: tickets.filter(t => getAssignedArr(t).includes(tech.employeeNo) && !['completed','closed'].includes(t.status)).length
   }));
@@ -2660,6 +2847,8 @@ function startTechVisit(id) {
   if (!t.visitData) t.visitData = EMPTY_VISIT();
   if (!t.visitData.start_time) {
     t.visitData.start_time = Date.now();
+    t.visitData.technician_name = currentUser?.name || '';
+    console.log('[Visit] start saved', t.visitData.start_time);
     db.saveVisit(t.id, t.visitData);
   }
   saveTickets(tickets);
@@ -2680,19 +2869,24 @@ function startTechVisit(id) {
     ? `Team job · ${teamArr.length} technicians · ${vd.updatedByName ? 'Last: '+vd.updatedByName : 'No updates yet'}`
     : startStr ? `Started at ${startStr}` : 'Job actions checklist';
 
-  // ── Show status badge and timer pill ──
+  // ── Show status badge and timer pill (manager/admin only per privacy rule) ──
   const statusBadgeEl = document.getElementById('av-status-badge');
   const timerPill     = document.getElementById('av-timer-pill');
   const timerLabel    = document.getElementById('av-timer-label');
   if (statusBadgeEl) statusBadgeEl.style.display = 'block';
-  if (timerPill && startStr) {
-    timerPill.style.display = 'inline-flex';
-    if (timerLabel) timerLabel.textContent = `Started ${startStr}`;
+  // PRIVACY RULE: timer/elapsed time hidden from technician
+  if (timerPill) {
+    if (canSeeTiming() && startStr) {
+      timerPill.style.display = 'inline-flex';
+      if (timerLabel) timerLabel.textContent = `Started ${startStr}`;
+    } else {
+      timerPill.style.display = 'none';
+    }
   }
 
-  // ── Live elapsed timer (updates every minute) ──
+  // ── Live elapsed timer — manager/admin only ──
   if (window._visitTimerInterval) clearInterval(window._visitTimerInterval);
-  if (vd.start_time && timerLabel) {
+  if (canSeeTiming() && vd.start_time && timerLabel) {
     const updateElapsed = () => {
       if (!activeTechJobId) { clearInterval(window._visitTimerInterval); return; }
       const elapsed = Math.round((Date.now() - vd.start_time) / 60000);
@@ -2811,9 +3005,11 @@ async function captureGPS(ticketId) {
         console.warn('[GPS] Reverse geocode failed (non-fatal):', e.message);
       }
 
-      // Save to visit data on the ticket
+      // Save to visit data — gps_location (backward compat) + gps_start (canonical)
       const vd = getTicketVisit(ticketId);
       vd.gps_location = gpsData;
+      vd.gps_start    = gpsData;  // canonical v7 field
+      console.log('[Visit] GPS start saved', gpsData);
       saveTickets(tickets);
 
       // Also persist to Supabase visit_data
@@ -2853,19 +3049,44 @@ async function captureGPS(ticketId) {
 let currentPhotoType = 'before';
 let sigCanvas = null, sigCtx = null, sigDrawing = false, sigHasData = false;
 
+// ══════════════════════════════════════════════════
+//   VISIT DATA — Canonical structure (spec v2)
+//   All fields here; always updated via getTicketVisit()
+// ══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════
+//   VISIT DATA STRUCTURE  (canonical v7)
+// ══════════════════════════════════════════════════
 const EMPTY_VISIT = () => ({
-  beforePhotos: [], afterPhotos: [],
+  // ── Photos (plain URL strings after upload) ──
+  beforePhotos: [],
+  afterPhotos:  [],
+
+  // ── Spare parts & notes ──
   parts: [],
   notes: { issue:'', action:'', rec:'', completion:'' },
-  signature: null, sigName: '',
-  updatedBy: null, updatedAt: null, updatedByName: '',
-  gps_location: null,       // { latitude, longitude, accuracy, captured_at, label }
-  // ── Visit timing (set by startTechVisit / closeTechVisit) ──
-  start_time:   null,       // Date.now() when visit started
-  end_time:     null,       // Date.now() when visit closed
-  duration_min: null,       // calculated minutes
-  closed_by:    null,       // employeeNo of technician who closed
-  closed_by_name: null,
+
+  // ── Signature ──
+  signature:    null,   // base64 local fallback
+  signatureUrl: null,   // Supabase public URL
+  sigName:      '',     // customer name
+
+  // ── Audit ──
+  updatedBy:     null,
+  updatedAt:     null,
+  updatedByName: '',
+
+  // ── GPS ──
+  gps_location: null,   // primary check-in GPS (backward compat)
+  gps_start:    null,   // { latitude, longitude, accuracy, captured_at, label }
+  gps_end:      null,   // { latitude, longitude, accuracy, captured_at } — captured on close
+
+  // ── Timing — saved to DB; HIDDEN from technician UI per privacy rule ──
+  start_time:     null,   // Date.now() when visit started
+  end_time:       null,   // Date.now() when visit closed
+  duration_min:   null,   // auto-calculated minutes (alias: duration_minutes)
+  closed_by:      null,   // employeeNo
+  closed_by_name: null,   // display name
+  technician_name: '',    // primary tech display name
 });
 
 function getTicketVisit(ticketId) {
@@ -3404,11 +3625,35 @@ function closeTechVisit() {
     stampEdit(vd);
 
     // ── Record end time and duration ──
-    vd.end_time     = Date.now();
-    vd.closed_by    = currentUser?.employeeNo || currentUser?.id || null;
+    vd.end_time       = Date.now();
+    vd.closed_by      = currentUser?.employeeNo || currentUser?.id || null;
     vd.closed_by_name = currentUser?.name || null;
+    vd.technician_name = currentUser?.name || '';
     if (vd.start_time) {
       vd.duration_min = Math.round((vd.end_time - vd.start_time) / 60000);
+    }
+
+    // ── Debug logs (timing visible in console always; UI gated by canSeeTiming()) ──
+    console.log('[Visit] end saved', vd.end_time);
+    console.log('[Visit] duration', vd.duration_min, 'minutes');
+    console.log('[Visit] closed_by', vd.closed_by_name);
+
+    // ── Capture GPS end (best-effort, non-blocking) ──
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          vd.gps_end = {
+            latitude:    pos.coords.latitude,
+            longitude:   pos.coords.longitude,
+            accuracy:    pos.coords.accuracy,
+            captured_at: Date.now(),
+          };
+          console.log('[Visit] GPS end saved', vd.gps_end);
+          db.saveVisit(t.id, vd);
+        },
+        () => { /* GPS end is optional — silently skip on error */ },
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+      );
     }
 
     // Persist status + visit data to Supabase
@@ -3418,6 +3663,7 @@ function closeTechVisit() {
     // Final checklist snapshot
     const beforeUrls = (vd.beforePhotos||[]).filter(p => typeof p==='string' && p.startsWith('http'));
     const afterUrls  = (vd.afterPhotos ||[]).filter(p => typeof p==='string' && p.startsWith('http'));
+    console.log('[Visit] visit_data save — before_photos:', beforeUrls.length, '| after_photos:', afterUrls.length);
     storage.saveChecklist(t.id, {
       before_photos: beforeUrls,
       after_photos:  afterUrls,
@@ -3462,49 +3708,217 @@ function closeTechVisit() {
 }
 
 // ── ADMIN ──
+// ══════════════════════════════════════════════════════════════
+//   ADMIN USER MANAGEMENT  (v8)
+//   Create, edit, disable/enable users from the Admin Panel.
+// ══════════════════════════════════════════════════════════════
+
 function renderAdmin() {
+  // ── Stats ──
+  const s = getStats();
+  const atEl = document.getElementById('admin-total');
+  const adEl = document.getElementById('admin-done');
+  const aoEl = document.getElementById('admin-open');
+  if (atEl) atEl.textContent = s.total;
+  if (adEl) adEl.textContent = s.completed;
+  if (aoEl) aoEl.textContent = s.open;
+
+  // ── User count KPI ──
+  const ukpi = document.getElementById('admin-user-count');
+  if (ukpi) ukpi.textContent = allUsers.length;
+
   const el = document.getElementById('admin-user-list');
-  const roleTagMap={requester_consumer:'role-tag-req_c',requester_commercial:'role-tag-req_com',technical_manager:'role-tag-mgr',technician:'role-tag-tech',admin:'role-tag-admin'};
+  if (!el) return;
 
-  if (el) {
-    const mgmtRows = nonTechUsers.map(u=>`
-      <div class="admin-user-row">
-        <div style="width:34px;height:34px;border-radius:50%;background:${u.color};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff;flex-shrink:0">${u.avatar}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:700">${u.name}</div>
-          <div style="font-size:11px;color:var(--muted)">${u.email}</div>
-        </div>
-        <div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;white-space:nowrap" class="${roleTagMap[u.role]||''}">${u.roleLabel.replace('Requester — ','')}</div>
-      </div>`).join('');
+  const roleColors = {
+    admin:'background:var(--err-bg);color:var(--err)',
+    technical_manager:'background:var(--warn-bg);color:var(--warn)',
+    regional_supervisor:'background:#e0f2fe;color:#0369a1',
+    technician:'background:var(--ok-bg);color:var(--ok)',
+    requester_consumer:'background:#dbeafe;color:#1d4ed8',
+    requester_commercial:'background:#e0e7ff;color:#4338ca',
+  };
+  const roleLabels = {
+    admin:'Admin',
+    technical_manager:'Tech Manager',
+    regional_supervisor:'Supervisor',
+    technician:'Technician',
+    requester_consumer:'Requester',
+    requester_commercial:'Requester (Comm)',
+  };
+  const regionBadge = r => r
+    ? `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(0,90,169,.1);color:var(--p);font-weight:700;margin-left:4px;">${r.charAt(0).toUpperCase()+r.slice(1)}</span>`
+    : '';
 
-    const techRows = technicianAccounts.map(tech=>`
-      <div class="admin-user-row">
-        <div style="width:34px;height:34px;border-radius:50%;background:${tech.color};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff;flex-shrink:0">${initials(tech.name)}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:700">${tech.name}</div>
-          <div style="font-size:11px;color:var(--muted)">${tech.employeeNo}@delta-tech.com</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0">
-          <div style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--ok-bg);color:var(--ok)">${tech.title}</div>
-          <div style="font-family:'JetBrains Mono';font-size:10px;color:var(--muted)">${tech.employeeNo}</div>
-        </div>
-      </div>`).join('');
+  // Group by role order
+  const order = ['admin','technical_manager','regional_supervisor','technician','requester_consumer','requester_commercial'];
+  const sorted = [...allUsers].sort((a,b) => {
+    const ia = order.indexOf(a.role), ib = order.indexOf(b.role);
+    if (ia !== ib) return ia - ib;
+    return (a.full_name||'').localeCompare(b.full_name||'');
+  });
 
-    el.innerHTML =
-      `<div style="padding:8px 14px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);border-bottom:1px solid var(--bdr)">Management & Admin</div>` +
-      mgmtRows +
-      `<div style="padding:8px 14px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);border-bottom:1px solid var(--bdr);border-top:2px solid var(--bdr)">
-        Field Technicians (${technicianAccounts.length})
-       </div>` +
-      techRows;
+  el.innerHTML = sorted.map(u => {
+    const inactive = u.is_active === false;
+    const roleStyle = roleColors[u.role] || 'background:#f3f4f6;color:#374151';
+    return `
+    <div class="admin-user-row" style="${inactive ? 'opacity:.5;' : ''}">
+      <div style="width:36px;height:36px;border-radius:50%;background:${u.color||'#6b7280'};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;color:#fff;flex-shrink:0;">${initials(u.full_name)}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;color:var(--txt)">${u.full_name}${inactive ? ' <span style="font-size:10px;color:var(--muted)">(Disabled)</span>' : ''}</div>
+        <div style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+          ${u.username} · ${u.employee_number || '—'}${regionBadge(u.region)}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+        <div style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;${roleStyle}">${roleLabels[u.role]||u.role}</div>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-outline btn-xs" onclick="openEditUser('${u.id}')" title="Edit user">✏️</button>
+          <button class="btn btn-xs" style="${inactive ? 'background:var(--ok);color:#fff;' : 'background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);'}" onclick="toggleUserActive('${u.id}',${!inactive})" title="${inactive ? 'Enable' : 'Disable'}">${inactive ? '✓ Enable' : '⏸ Disable'}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Toggle user active/inactive ──
+async function toggleUserActive(userId, makeActive) {
+  const u = allUsers.find(x => x.id === userId);
+  if (!u) return;
+  u.is_active = makeActive;
+  u.updated_at = new Date().toISOString();
+  console.log('[Admin] toggle user active:', u.username, '→', makeActive);
+  // Persist to Supabase
+  if (supabaseClient) {
+    const { error } = await supabaseClient
+      .from(USERS_TABLE)
+      .update({ is_active: makeActive, updated_at: u.updated_at })
+      .eq('id', userId);
+    if (error) console.error('[Admin] toggleUserActive error:', error.message);
+  }
+  renderAdmin();
+  showToast(makeActive ? `✅ ${u.full_name} enabled` : `⏸ ${u.full_name} disabled`);
+}
+
+// ── Open create-user modal ──
+function openCreateUser() {
+  // Reset form
+  ['um-fullname','um-empno','um-username','um-password'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const roleEl = document.getElementById('um-role');
+  const regionEl = document.getElementById('um-region');
+  const colorEl = document.getElementById('um-color');
+  if (roleEl) roleEl.value = 'technician';
+  if (regionEl) regionEl.value = '';
+  if (colorEl) colorEl.value = '#005AA9';
+  document.getElementById('um-modal-title').textContent = 'Create User';
+  document.getElementById('um-user-id').value = '';
+  document.getElementById('um-error').style.display = 'none';
+  toggleRegionField();
+  openModal('user-mgmt-modal');
+}
+
+// ── Open edit-user modal ──
+function openEditUser(userId) {
+  const u = allUsers.find(x => x.id === userId);
+  if (!u) return;
+  document.getElementById('um-modal-title').textContent = 'Edit User';
+  document.getElementById('um-user-id').value = u.id;
+  document.getElementById('um-fullname').value  = u.full_name || '';
+  document.getElementById('um-empno').value     = u.employee_number || '';
+  document.getElementById('um-username').value  = u.username || '';
+  document.getElementById('um-password').value  = ''; // don't pre-fill password
+  document.getElementById('um-role').value      = u.role || 'technician';
+  document.getElementById('um-region').value    = u.region || '';
+  document.getElementById('um-color').value     = u.color || '#005AA9';
+  document.getElementById('um-error').style.display = 'none';
+  toggleRegionField();
+  openModal('user-mgmt-modal');
+}
+
+// ── Show/hide region field based on role ──
+function toggleRegionField() {
+  const role = document.getElementById('um-role')?.value;
+  const regionRow = document.getElementById('um-region-row');
+  if (regionRow) {
+    const needsRegion = ['technician','regional_supervisor'].includes(role);
+    regionRow.style.display = needsRegion ? 'block' : 'none';
+  }
+}
+
+// ── Save user (create or update) ──
+async function saveUserForm() {
+  const idInput   = document.getElementById('um-user-id').value.trim();
+  const fullName  = document.getElementById('um-fullname').value.trim();
+  const empNo     = document.getElementById('um-empno').value.trim();
+  const username  = document.getElementById('um-username').value.trim().toLowerCase();
+  const password  = document.getElementById('um-password').value.trim();
+  const role      = document.getElementById('um-role').value;
+  const region    = document.getElementById('um-region').value || null;
+  const color     = document.getElementById('um-color').value || '#005AA9';
+  const errEl     = document.getElementById('um-error');
+  const saveBtn   = document.getElementById('um-save-btn');
+
+  // ── Validation ──
+  if (!fullName) { errEl.textContent='Full name is required.'; errEl.style.display='block'; return; }
+  if (!username) { errEl.textContent='Username is required.'; errEl.style.display='block'; return; }
+  if (!idInput && !password) { errEl.textContent='Password is required for new users.'; errEl.style.display='block'; return; }
+  if (['technician','regional_supervisor'].includes(role) && !region) {
+    errEl.textContent='Region is required for this role.'; errEl.style.display='block'; return;
+  }
+  errEl.style.display = 'none';
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+
+  const isEdit = !!idInput;
+  const userId = isEdit ? idInput : ('usr_' + Date.now());
+  const now    = new Date().toISOString();
+
+  const payload = {
+    id:              userId,
+    full_name:       fullName,
+    employee_number: empNo || null,
+    username,
+    role,
+    region,
+    color,
+    is_active:       true,
+    updated_at:      now,
+  };
+  if (!isEdit) payload.created_at = now;
+  if (password) payload.password = password;
+
+  // ── Persist to Supabase ──
+  if (supabaseClient) {
+    const { error } = await supabaseClient
+      .from(USERS_TABLE)
+      .upsert(payload, { onConflict: 'id' });
+    if (error) {
+      console.error('[Admin] saveUserForm error:', error.message);
+      errEl.textContent = 'Save failed: ' + error.message;
+      errEl.style.display = 'block';
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save User';
+      return;
+    }
   }
 
-  const s = getStats();
-  const atEl=document.getElementById('admin-total'), adEl=document.getElementById('admin-done'), aoEl=document.getElementById('admin-open');
-  if(atEl)atEl.textContent=s.total; if(adEl)adEl.textContent=s.completed; if(aoEl)aoEl.textContent=s.open;
-  // Update user count KPI
-  const techKpi = document.querySelector('#page-admin .kpi-value.tech-count');
-  if (techKpi) techKpi.textContent = demoUsers.length;
+  // ── Update in-memory registry ──
+  const existing = allUsers.findIndex(u => u.id === userId);
+  if (existing >= 0) {
+    allUsers[existing] = { ...allUsers[existing], ...payload };
+    console.log('[Admin] updated user', username, '| role:', role);
+  } else {
+    allUsers.push({ ...payload, password: password || '' });
+    console.log('[Admin] created user', username, '| role:', role);
+  }
+
+  saveBtn.disabled = false;
+  saveBtn.textContent = 'Save User';
+  closeModal('user-mgmt-modal');
+  renderAdmin();
+  showToast(isEdit ? `✅ ${fullName} updated` : `✅ ${fullName} created`);
 }
 
 // ── TICKET DETAIL ──
@@ -3582,6 +3996,30 @@ function openDetail(id) {
       ${statusPills}
     </div>
     ${techReassign}
+    <!-- ── MANAGER/ADMIN TIMING PANEL (hidden from technician) ── -->
+    ${isManagerOrAdmin() && t.visitData ? (() => {
+      const vd = t.visitData;
+      if (!vd.start_time && !vd.end_time) return '';
+      const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + ' · ' + new Date(ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '—';
+      const durStr  = vd.duration_min != null ? (vd.duration_min >= 60 ? Math.floor(vd.duration_min/60)+'h '+(vd.duration_min%60)+'m' : vd.duration_min+' min') : '—';
+      const gpsS = vd.gps_start || vd.gps_location;
+      const gpsE = vd.gps_end;
+      return `
+      <div class="divider"></div>
+      <div style="background:#f0f7ff;border:1px solid rgba(0,90,169,.2);border-radius:var(--rs);padding:12px;margin-bottom:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--p);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+          <span>⏱</span> Visit Performance <span style="font-size:9px;background:var(--p);color:#fff;padding:2px 6px;border-radius:10px;font-weight:700;letter-spacing:0">Manager Only</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
+          <div><div style="color:var(--muted);font-size:10px;font-weight:600;margin-bottom:2px">START TIME</div><div style="font-family:'JetBrains Mono';font-weight:700">${fmtTime(vd.start_time)}</div></div>
+          <div><div style="color:var(--muted);font-size:10px;font-weight:600;margin-bottom:2px">END TIME</div><div style="font-family:'JetBrains Mono';font-weight:700">${fmtTime(vd.end_time)}</div></div>
+          <div><div style="color:var(--muted);font-size:10px;font-weight:600;margin-bottom:2px">DURATION</div><div style="font-weight:800;color:var(--p)">${durStr}</div></div>
+          <div><div style="color:var(--muted);font-size:10px;font-weight:600;margin-bottom:2px">CLOSED BY</div><div style="font-weight:700">${vd.closed_by_name||'—'}</div></div>
+          ${gpsS && !gpsS.error ? `<div style="grid-column:1/-1"><div style="color:var(--muted);font-size:10px;font-weight:600;margin-bottom:2px">GPS CHECK-IN</div><div style="font-family:'JetBrains Mono'">${gpsS.latitude?.toFixed(5)}, ${gpsS.longitude?.toFixed(5)}${gpsS.label ? ' · '+gpsS.label : ''}</div></div>` : ''}
+          ${gpsE && !gpsE.error ? `<div style="grid-column:1/-1"><div style="color:var(--muted);font-size:10px;font-weight:600;margin-bottom:2px">GPS CHECK-OUT</div><div style="font-family:'JetBrains Mono'">${gpsE.latitude?.toFixed(5)}, ${gpsE.longitude?.toFixed(5)}</div></div>` : ''}
+        </div>
+      </div>`;
+    })() : ''}
     <div class="divider"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline" style="flex:1" onclick="closeModal('detail-modal')">Close</button>
@@ -3592,14 +4030,15 @@ function openDetail(id) {
   if (cfg.canAssign) {
     const listEl = document.getElementById('detail-tech-list');
     if (listEl) {
-      listEl.innerHTML = technicianAccounts.map(tech => `
+      // Region-filtered: supervisors see only their region's technicians
+      listEl.innerHTML = getTechsForCurrentUser().map(tech => `
         <label style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--rx);cursor:pointer;user-select:none;"
                onmouseover="this.style.background='rgba(0,90,169,.05)'" onmouseout="this.style.background=''">
           <input type="checkbox" value="${tech.employeeNo}" ${assignedArr.includes(tech.employeeNo)?'checked':''} style="width:16px;height:16px;accent-color:var(--p);cursor:pointer;flex-shrink:0;"/>
           <div class="tech-av" style="background:${tech.color};width:26px;height:26px;font-size:.6rem;flex-shrink:0">${initials(tech.name)}</div>
           <div style="flex:1">
             <div style="font-size:13px;font-weight:600">${tech.name}</div>
-            <div style="font-size:10px;color:var(--muted)">${tech.employeeNo} · ${tech.title}</div>
+            <div style="font-size:10px;color:var(--muted)">${tech.employeeNo} · ${tech.title}${tech.region ? ' · '+tech.region : ''}</div>
           </div>
         </label>`).join('');
     }
@@ -3650,7 +4089,9 @@ function quickAssign(id) {
 }
 
 function autoAssign() {
-  const counts = technicianAccounts.map(tech => ({
+  const techs = getTechsForCurrentUser();
+  if (!techs.length) return null;
+  const counts = techs.map(tech => ({
     empNo: tech.employeeNo,
     c: tickets.filter(t => getAssignedArr(t).includes(tech.employeeNo) && !['completed','closed'].includes(t.status)).length
   }));
@@ -3713,14 +4154,16 @@ function openNewTicket() {
 
 function populateTechCheckboxes(containerId) {
   const el = document.getElementById(containerId); if(!el) return;
-  el.innerHTML = technicianAccounts.map(tech => `
+  // ── Region-filtered: supervisor sees only their region's technicians ──
+  const techs = getTechsForCurrentUser();
+  el.innerHTML = techs.map(tech => `
     <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--rx);cursor:pointer;transition:background .1s;user-select:none;"
            onmouseover="this.style.background='rgba(0,90,169,.05)'" onmouseout="this.style.background=''">
       <input type="checkbox" value="${tech.employeeNo}" style="width:16px;height:16px;accent-color:var(--p);flex-shrink:0;cursor:pointer;"/>
       <div class="tech-av" style="background:${tech.color};width:28px;height:28px;font-size:.65rem;flex-shrink:0">${initials(tech.name)}</div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:600;color:var(--txt)">${tech.name}</div>
-        <div style="font-size:10px;color:var(--muted)">${tech.employeeNo} · ${tech.title}</div>
+        <div style="font-size:10px;color:var(--muted)">${tech.employeeNo} · ${tech.title}${tech.region ? ' · '+tech.region.charAt(0).toUpperCase()+tech.region.slice(1) : ''}</div>
       </div>
     </label>`).join('');
 }
@@ -3854,25 +4297,106 @@ async function loadFromSupabase() {
 // ══════════════════════════════
 //   INIT
 // ══════════════════════════════
-(function init() {
-  renderLoginScreen();
+(async function init() {
+  // ── Load users from Supabase (or fall back to built-in seed) ──
+  // This must complete before we can validate a session or handle login.
+  try { await loadUsersFromDB(); } catch(e) { console.warn('[Auth] init loadUsers failed:', e.message); }
+
+  // ── Restore session if stored ──
   try {
     const sess = JSON.parse(localStorage.getItem(SESSION_KEY)||'null');
     if (sess?.userId) {
-      const user = demoUsers.find(u=>u.id===sess.userId);
-      if (user) {
-        currentUser = user;
+      const found = allUsers.find(u => u.id === sess.userId);
+      if (found && found.is_active !== false) {
+        currentUser = dbUserToCurrentUser(found);
+        console.log('[Auth] session restored', currentUser.name, '|', currentUser.role);
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('app-shell').classList.add('visible');
         document.body.classList.add('app-active');
         bootApp();
         return;
       }
+      // Session user not found or disabled — clear it
+      localStorage.removeItem(SESSION_KEY);
     }
-  } catch(e){}
+  } catch(e) {}
+
+  // ── Show login ──
   document.getElementById('login-screen').style.display = 'block';
+  document.getElementById('login-username')?.focus();
 })();
 </script>
+
+<!-- ══════════════════════════════════════════════════
+     USER MANAGEMENT MODAL  (Admin only — v8)
+══════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="user-mgmt-modal" onclick="handleModalBg(event,'user-mgmt-modal')">
+  <div class="modal-sheet" style="max-height:90vh;overflow-y:auto;">
+    <div class="modal-drag"></div>
+    <div class="modal-hdr">
+      <div class="modal-title" id="um-modal-title">Create User</div>
+      <button class="modal-close" onclick="closeModal('user-mgmt-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="um-user-id"/>
+
+      <div class="form-group">
+        <label class="form-label">Full Name <span class="req">*</span></label>
+        <input class="form-input" id="um-fullname" placeholder="e.g. Naser Shah Khan"/>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">Employee Number</label>
+          <input class="form-input" id="um-empno" placeholder="e.g. 5304"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username <span class="req">*</span></label>
+          <input class="form-input" id="um-username" placeholder="e.g. naser.khan" autocapitalize="off"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password <span style="color:var(--muted);font-weight:400">(leave blank to keep current)</span></label>
+        <input class="form-input" id="um-password" type="password" placeholder="Set password"/>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">Role <span class="req">*</span></label>
+          <select class="form-select" id="um-role" onchange="toggleRegionField()">
+            <option value="technician">Technician</option>
+            <option value="regional_supervisor">Regional Supervisor</option>
+            <option value="technical_manager">Technical Manager</option>
+            <option value="admin">Admin</option>
+            <option value="requester_consumer">Requester (Consumer)</option>
+            <option value="requester_commercial">Requester (Commercial)</option>
+          </select>
+        </div>
+        <div class="form-group" id="um-region-row">
+          <label class="form-label">Region <span class="req">*</span></label>
+          <select class="form-select" id="um-region">
+            <option value="">— Select —</option>
+            <option value="east">East</option>
+            <option value="central">Central</option>
+            <option value="west">West</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Avatar Colour</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="color" id="um-color" value="#005AA9" style="width:44px;height:36px;border:none;border-radius:var(--rx);cursor:pointer;padding:2px;"/>
+          <div style="font-size:12px;color:var(--muted)">Pick avatar background colour</div>
+        </div>
+      </div>
+
+      <div id="um-error" style="display:none;background:var(--err-bg);color:var(--err);border-radius:var(--rx);padding:8px 12px;font-size:13px;font-weight:600;margin-bottom:8px;"></div>
+
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button class="btn btn-outline" style="flex:1" onclick="closeModal('user-mgmt-modal')">Cancel</button>
+        <button class="btn btn-p" style="flex:2;min-height:48px;" id="um-save-btn" onclick="saveUserForm()">Save User</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- SheetJS for Excel export -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -4186,6 +4710,7 @@ function printActionReport() {
 }
 
 function buildActionReportHTML(t) {
+  console.log('[Report] rendering ticket', t.id, '| status:', t.status);
   const vd = getVisitDataForTicket(t.id);
   const typeLabels = { maintenance:'Maintenance Request', installation:'Installation Request', 'spare-parts':'Spare Parts Request', amc:'AMC / Contract' };
   const typeIcons  = { maintenance:'🔧', installation:'🏗️', 'spare-parts':'📦', amc:'📄' };
@@ -4291,19 +4816,31 @@ function buildActionReportHTML(t) {
       </div>
     </div>
 
-    <!-- ── 1b. VISIT DETAILS (timing, GPS) ── -->
-    ${(vd.start_time||vd.end_time||vd.gps_location) ? `
+    <!-- ── 1b. VISIT DETAILS (timing, GPS) — manager/admin only ── -->
+    ${(vd.start_time||vd.end_time||vd.gps_location||vd.gps_start) ? `
     <div class="ar-section">
       <div class="ar-section-title"><span class="ar-section-icon">🕐</span> Visit Details</div>
       <div class="ar-grid">
-        ${vd.start_time ? `<div class="ar-field"><div class="ar-field-lbl">Start Time</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${new Date(vd.start_time).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · ${new Date(vd.start_time).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div></div>` : ''}
-        ${vd.end_time   ? `<div class="ar-field"><div class="ar-field-lbl">End Time</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${new Date(vd.end_time).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · ${new Date(vd.end_time).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div></div>` : ''}
-        ${vd.duration_min != null ? `<div class="ar-field"><div class="ar-field-lbl">Duration</div><div class="ar-field-val">${vd.duration_min >= 60 ? Math.floor(vd.duration_min/60)+'h '+( vd.duration_min%60)+'m' : vd.duration_min+' min'}</div></div>` : ''}
-        ${vd.closed_by_name ? `<div class="ar-field"><div class="ar-field-lbl">Closed By</div><div class="ar-field-val">${vd.closed_by_name} (${vd.closed_by||'—'})</div></div>` : ''}
-        ${vd.gps_location && !vd.gps_location.error ? `
-          <div class="ar-field"><div class="ar-field-lbl">Check-In Location</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${vd.gps_location.latitude?.toFixed(6)}, ${vd.gps_location.longitude?.toFixed(6)}</div></div>
-          ${vd.gps_location.label ? `<div class="ar-field"><div class="ar-field-lbl">Address</div><div class="ar-field-val">${vd.gps_location.label}</div></div>` : ''}
-          ${vd.gps_location.accuracy ? `<div class="ar-field"><div class="ar-field-lbl">GPS Accuracy</div><div class="ar-field-val">${Math.round(vd.gps_location.accuracy)}m</div></div>` : ''}
+        <!-- GPS check-in shown to all roles -->
+        ${(vd.gps_start || vd.gps_location) ? (() => {
+          const g = vd.gps_start || vd.gps_location;
+          if (g.error) return '';
+          return `
+            <div class="ar-field"><div class="ar-field-lbl">Check-In Location</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${g.latitude?.toFixed(6)}, ${g.longitude?.toFixed(6)}</div></div>
+            ${g.label ? `<div class="ar-field"><div class="ar-field-lbl">Address</div><div class="ar-field-val">${g.label}</div></div>` : ''}
+            ${g.accuracy ? `<div class="ar-field"><div class="ar-field-lbl">GPS Accuracy</div><div class="ar-field-val">${Math.round(g.accuracy)}m</div></div>` : ''}
+          `;
+        })() : ''}
+        <!-- GPS end — manager/admin only -->
+        ${canSeeTiming() && vd.gps_end && !vd.gps_end.error ? `
+          <div class="ar-field"><div class="ar-field-lbl">Check-Out Location</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${vd.gps_end.latitude?.toFixed(6)}, ${vd.gps_end.longitude?.toFixed(6)}</div></div>
+        ` : ''}
+        <!-- Timing fields — manager/admin only per privacy rule -->
+        ${canSeeTiming() ? `
+          ${vd.start_time ? `<div class="ar-field"><div class="ar-field-lbl">Start Time</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${new Date(vd.start_time).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · ${new Date(vd.start_time).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div></div>` : ''}
+          ${vd.end_time   ? `<div class="ar-field"><div class="ar-field-lbl">End Time</div><div class="ar-field-val" style="font-family:'JetBrains Mono'">${new Date(vd.end_time).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · ${new Date(vd.end_time).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div></div>` : ''}
+          ${vd.duration_min != null ? `<div class="ar-field"><div class="ar-field-lbl">Duration</div><div class="ar-field-val">${vd.duration_min >= 60 ? Math.floor(vd.duration_min/60)+'h '+(vd.duration_min%60)+'m' : vd.duration_min+' min'}</div></div>` : ''}
+          ${vd.closed_by_name ? `<div class="ar-field"><div class="ar-field-lbl">Closed By</div><div class="ar-field-val">${vd.closed_by_name} (${vd.closed_by||'—'})</div></div>` : ''}
         ` : ''}
       </div>
     </div>` : ''}
