@@ -573,7 +573,13 @@ body.app-active{padding-bottom:var(--bnav);}
       </div>
       <div id="login-error" style="margin-top:10px;">⛔ Incorrect username or password.</div>
 
-      <button class="login-btn" id="login-btn" onclick="doLogin()" style="margin-top:20px;">
+      <!-- ── REMEMBER ME ── -->
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;user-select:none;">
+        <input type="checkbox" id="login-remember" style="width:16px;height:16px;accent-color:var(--p);cursor:pointer;"/>
+        <span style="font-size:13px;color:var(--txt);">Remember me</span>
+      </label>
+
+      <button class="login-btn" id="login-btn" onclick="doLogin()" style="margin-top:14px;">
         Log In →
       </button>
 
@@ -2124,9 +2130,16 @@ async function doLogin() {
 
     window.currentUser = currentUser;
 
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ employeeNumber: found.employee_number }));
-    localStorage.setItem('currentUser', JSON.stringify(found));
-    console.log('[LOGIN] session saved to localStorage');
+    // Persist session only if "Remember Me" is checked
+    const rememberMe = document.getElementById('login-remember')?.checked;
+    if (rememberMe) {
+      localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: found.employee_number }));
+      localStorage.setItem('currentUser', JSON.stringify(found));
+      console.log('[LOGIN] Session saved (Remember Me)');
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem('currentUser');
+    }
 
     // Cache into allUsers
     if (!allUsers.find(u => u.employee_number === found.employee_number)) allUsers.push(found);
@@ -2182,21 +2195,11 @@ function devBypassLogin() {
 function doLogout() {
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem('currentUser');
+  localStorage.removeItem('sessionUser');
   currentUser        = null;
   window.currentUser = null;
-  const u = document.getElementById('login-username');
-  const p = document.getElementById('login-pwd');
-  const e = document.getElementById('login-error');
-  const b = document.getElementById('login-btn');
-  if (u) u.value = '';
-  if (p) p.value = '';
-  if (e) e.style.display = 'none';
-  if (b) { b.disabled = false; b.textContent = 'Log In →'; }
-  document.getElementById('login-screen').classList.remove('hidden');
-  document.getElementById('app-shell').classList.remove('visible');
-  document.body.classList.remove('app-active');
-  document.getElementById('login-screen').scrollTop = 0;
-  console.log('[Auth] logged out');
+  console.log('[Auth] logged out — reloading');
+  location.reload();
 }
 
 // ── ROLE CONFIG ──
@@ -4662,16 +4665,25 @@ async function loadFromSupabase() {
 }
 
 // ══════════════════════════════
-//   INIT
+//   INIT — always show login screen
 // ══════════════════════════════
 window.addEventListener('DOMContentLoaded', () => {
-  try {
-    devBypassLogin();
-  } catch(e) {
-    console.error('[INIT ERROR]', e);
-    const err = document.getElementById('login-error');
-    if (err) { err.textContent = e.message || 'Initialization failed'; err.style.display = 'block'; }
-  }
+  // Clear any stored session so login is always required on fresh page load
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem('currentUser');
+  localStorage.removeItem('sessionUser');
+
+  // Ensure login screen is visible and app shell is hidden
+  const loginEl = document.getElementById('login-screen');
+  const appEl   = document.getElementById('app-shell');
+  if (loginEl) { loginEl.classList.remove('hidden'); loginEl.style.display = ''; }
+  if (appEl)   { appEl.classList.remove('visible'); }
+  document.body.classList.remove('app-active');
+
+  // Focus username field
+  setTimeout(() => document.getElementById('login-username')?.focus(), 100);
+
+  console.log('[INIT] Login screen ready — session cleared');
 });
 </script>
 
