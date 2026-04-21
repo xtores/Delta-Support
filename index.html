@@ -1842,46 +1842,17 @@ function buildFallbackUsers() {
 
 // ── Map a DB user row to the internal currentUser shape ──
 // employee_number is the integer PK; app stores it as string for compatibility.
-// ── Normalise a role string from DB to an internal ROLE_CONFIG key ──
-// Handles: 'Technical Manager', 'technical_manager', 'technician', 'Admin', etc.
-function normaliseRole(raw) {
-  if (!raw) return 'technician';
-  // Already a valid key
-  if (ROLE_CONFIG[raw]) return raw;
-  // Convert to snake_case: lowercase + spaces→underscores
-  const snake = raw.toLowerCase().replace(/[\s-]+/g, '_');
-  if (ROLE_CONFIG[snake]) return snake;
-  // Explicit alias map for common DB values
-  const aliases = {
-    'technical_manager':    'technical_manager',
-    'techmanager':          'technical_manager',
-    'tech_manager':         'technical_manager',
-    'manager':              'technical_manager',
-    'regional_supervisor':  'regional_supervisor',
-    'supervisor':           'regional_supervisor',
-    'technician':           'technician',
-    'tech':                 'technician',
-    'field_technician':     'technician',
-    'admin':                'admin',
-    'administrator':        'admin',
-    'requester_consumer':   'requester_consumer',
-    'requester_commercial': 'requester_commercial',
-    'requester':            'requester_consumer',
-  };
-  return aliases[snake] || 'technician';
-}
-
 function dbUserToCurrentUser(u) {
-  const role  = normaliseRole(u.role);   // normalise from whatever DB stores
+  const role  = u.role || 'technician';
   const cfg   = ROLE_CONFIG[role] || ROLE_CONFIG.technician;
-  const empNo = String(u.employee_number);
+  const empNo = String(u.employee_number);   // string for internal app use
   return {
-    id:          empNo,
+    id:          empNo,                      // app-internal id = employee_number as string
     employeeNo:  empNo,
     name:        u.full_name,
     username:    u.username,
     email:       `${u.username}@delta-tech.com`,
-    role,                                 // always a valid ROLE_CONFIG key
+    role,
     region:      u.region || null,
     supervisorId: u.supervisor_id ? String(u.supervisor_id) : null,
     managerId:    u.manager_id   ? String(u.manager_id)    : null,
@@ -1988,114 +1959,112 @@ async function doLogin() {
   const btn        = document.getElementById('login-btn');
 
   const identifier = (usernameEl?.value || '').trim();
-  const password   = (pwdEl?.value   || '').trim();
+  const password   = (pwdEl?.value || '').trim();
   if (!identifier || !password) return;
 
-  // ── Lock UI ──
   btn.disabled    = true;
   btn.textContent = 'Logging in…';
   errEl.style.display = 'none';
 
-  console.log('[LOGIN] Attempt:', identifier);
-
-  // ── Helper: always restore button on failure ──
-  const fail = (msg) => {
-    console.error('[LOGIN] Failed:', msg);
-    errEl.textContent = msg;
-    errEl.style.display = 'block';
-    btn.disabled    = false;
-    btn.textContent = 'Log In →';
-  };
-
+  // ── Direct Supabase query — no dependency on allUsers or loadUsersFromDB ──
+  // Matches by username (text) OR employee_number (cast to text for .or())
   let found = null;
+  let queryError = null;
 
-  // ── Direct Supabase query — single call, handles username OR employee_number ──
   if (supabaseClient) {
     try {
-      const empNum = parseInt(identifier, 10);
-      const isNum  = !isNaN(empNum) && String(empNum) === identifier;
+      // Try username match first
+      const byUsername = await supabaseClient
+        .from('users')
+        .select('*')
+        .eq('username', identifier.toLowerCase())
+        .limit(1)
+        .maybeSingle();
 
-      let queryResult;
-      if (isNum) {
-        // Input is purely numeric — search by employee_number only
-        queryResult = await supabaseClient
-          .from('users')
-          .select('*')
-          .eq('employee_number', empNum)
-          .limit(1);
+      if (byUsername.data) {
+        found = byUsername.data;
       } else {
-        // Input is a username string — search by username (case-insensitive)
-        queryResult = await supabaseClient
-          .from('users')
-          .select('*')
-          .ilike('username', identifier)
-          .limit(1);
-      }
-
-      console.log('[LOGIN] Query result:', queryResult.data, queryResult.error);
-
-      if (queryResult.error) {
-        console.warn('[LOGIN] Supabase error:', queryResult.error.message);
-        // Fall through to in-memory fallback below
-      } else if (queryResult.data && queryResult.data.length > 0) {
-        found = queryResult.data[0];
+        // Try employee_number match (numeric)
+        const empNum = parseInt(identifier, 10);
+        if (!isNaN(empNum)) {
+          const byEmp = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('employee_number', empNum)
+            .limit(1)
+            .maybeSingle();
+          if (byEmp.data) found = byEmp.data;
+          if (byEmp.error) queryError = byEmp.error;
+        }
+        if (byUsername.error) queryError = byUsername.error;
       }
     } catch(e) {
-      console.error('[LOGIN] Query exception:', e.message || e);
+      queryError = e;
     }
   }
 
-  // ── In-memory fallback (works offline or if Supabase hasn't loaded yet) ──
-  if (!found && allUsers.length > 0) {
-    const lower = identifier.toLowerCase();
+  // ── Fallback to in-memory allUsers if Supabase unreachable ──
+  if (!found && !supabaseClient) {
     found = allUsers.find(u =>
-      u.username?.toLowerCase() === lower ||
+      u.username?.toLowerCase() === identifier.toLowerCase() ||
       String(u.employee_number) === identifier
     ) || null;
-    if (found) console.log('[LOGIN] Found via in-memory fallback');
+  }
+  if (!found && queryError) {
+    // Supabase returned an error — try in-memory fallback
+    console.warn('[Login] Supabase query failed, trying in-memory:', queryError.message || queryError);
+    found = allUsers.find(u =>
+      u.username?.toLowerCase() === identifier.toLowerCase() ||
+      String(u.employee_number) === identifier
+    ) || null;
   }
 
-  console.log('[LOGIN] User found:', found
-    ? { username: found.username, employee_number: found.employee_number, role: found.role }
-    : null);
+  console.log('[Login] User found:', found ? { username: found.username, employee_number: found.employee_number, role: found.role } : null);
 
   // ── Validate ──
   if (!found) {
-    return fail('⛔ User not found. Check username or employee number.');
+    console.log('[Login] failure — not found:', identifier);
+    errEl.textContent = '⛔ Username or employee number not found.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Log In →';
+    return;
   }
   if (found.is_active === false) {
-    return fail('⛔ This account is disabled. Contact your administrator.');
+    console.log('[Login] failure — account disabled:', identifier);
+    errEl.textContent = '⛔ This account has been disabled. Contact your administrator.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Log In →';
+    return;
   }
-  if (String(found.password) !== String(password)) {
+  if (found.password !== password) {
+    console.log('[Login] failure — wrong password for:', identifier);
+    errEl.textContent = '⛔ Incorrect password. Please try again.';
+    errEl.style.display = 'block';
     pwdEl.value = '';
     pwdEl.focus();
-    return fail('⛔ Wrong password. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Log In →';
+    return;
   }
 
   // ── Success ──
-  try {
-    currentUser = dbUserToCurrentUser(found);
-    console.log('[LOGIN] Success:', currentUser.name, '| role:', currentUser.role, '| empNo:', currentUser.employeeNo);
+  currentUser = dbUserToCurrentUser(found);
+  console.log('[Login] success —', currentUser.name, '| role:', currentUser.role, '| empNo:', currentUser.employeeNo, '| region:', currentUser.region || 'all');
 
-    // Merge into allUsers cache
-    if (!allUsers.find(u => u.employee_number === found.employee_number)) {
-      allUsers.push(found);
-    }
-
-    // Persist session
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ employeeNumber: found.employee_number }));
-    localStorage.setItem('currentUser', JSON.stringify(found));   // extra compatibility key
-
-    // Transition to app
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('app-shell').classList.add('visible');
-    document.body.classList.add('app-active');
-    btn.textContent = 'Log In →';
-    bootApp();
-  } catch(e) {
-    console.error('[LOGIN] bootApp error:', e.message || e);
-    fail('⛔ Login error: ' + (e.message || 'unknown error'));
+  // Merge into allUsers cache so rest of app sees this user
+  if (!allUsers.find(u => u.employee_number === found.employee_number)) {
+    allUsers.push(found);
   }
+
+  // Store employee_number in session (integer PK)
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ employeeNumber: found.employee_number }));
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app-shell').classList.add('visible');
+  document.body.classList.add('app-active');
+  btn.textContent = 'Log In →';
+  bootApp();
 }
 
 function doLogout() {
@@ -2380,40 +2349,25 @@ let selectedUserId = null;
 //   APP BOOT PER ROLE
 // ══════════════════════════════
 function bootApp() {
-  const cfg = ROLE_CONFIG[currentUser.role] || ROLE_CONFIG.technician;
-
-  // ── Topbar & menu ──
+  const cfg = ROLE_CONFIG[currentUser.role];
+  // Topbar
   document.getElementById('role-pill').textContent = cfg.label;
   document.getElementById('menu-avatar').textContent = currentUser.avatar;
   document.getElementById('menu-avatar').style.background = currentUser.color;
   document.getElementById('menu-user-name').textContent = currentUser.name;
   document.getElementById('menu-user-role').textContent = currentUser.roleLabel;
-
   // Build menu + nav
   buildMenu(cfg);
   buildBottomNav(cfg);
-
   // Set date
   document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-
   // Populate team dropdowns
   populateTeamDropdown('f-branch');
   populateTeamDropdown('cr-branch');
-
-  // ── Role-based landing page ──
-  // Each role opens the most relevant page on login
-  const roleFirstPage = {
-    admin:                 'dashboard',
-    technical_manager:     'dashboard',
-    regional_supervisor:   'tickets',
-    technician:            'my-jobs',
-    requester_consumer:    'my-requests',
-    requester_commercial:  'my-requests',
-  };
-  const firstPage = roleFirstPage[currentUser.role] || cfg.pages[0];
+  // Show initial page
+  const firstPage = cfg.pages[0];
   goPage(firstPage);
-
-  // ── UI visibility by role ──
+  // UI visibility by role
   const newBtn = document.getElementById('dash-new-btn');
   if (newBtn) newBtn.style.display = cfg.canCreateRequest ? '' : 'none';
   const techGroup = document.getElementById('f-tech-group');
@@ -2422,9 +2376,9 @@ function bootApp() {
     const el = document.getElementById(id);
     if (el) el.style.display = cfg.canManageAMC ? '' : 'none';
   });
-
-  // Render with cached data immediately, then load fresh from Supabase
+  // Render immediately with cached data so UI isn't blank
   renderAll();
+  // Then load fresh data from Supabase in the background
   loadFromSupabase();
 }
 
@@ -4463,15 +4417,14 @@ async function loadFromSupabase() {
 
     if (empNum && supabaseClient) {
       // Query Supabase directly for the session user — no allUsers needed
-      const { data: sessionRows, error } = await supabaseClient
+      const { data: sessionUser, error } = await supabaseClient
         .from('users')
         .select('*')
         .eq('employee_number', empNum)
-        .limit(1);
+        .limit(1)
+        .maybeSingle();
 
-      const sessionUser = (!error && sessionRows && sessionRows.length > 0) ? sessionRows[0] : null;
-
-      if (sessionUser && sessionUser.is_active !== false) {
+      if (!error && sessionUser && sessionUser.is_active !== false) {
         currentUser = dbUserToCurrentUser(sessionUser);
         // Seed into allUsers cache
         allUsers = [sessionUser];
