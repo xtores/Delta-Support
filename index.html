@@ -576,6 +576,11 @@ body.app-active{padding-bottom:var(--bnav);}
       <button class="login-btn" id="login-btn" onclick="doLogin()" style="margin-top:20px;">
         Log In →
       </button>
+
+      <!-- ── DEV BYPASS — remove before production ── -->
+      <button onclick="devBypassLogin()" style="margin-top:10px;width:100%;padding:10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">
+        ⚡ Bypass Login (Dev)
+      </button>
     </div>
   </div>
 </div>
@@ -2103,7 +2108,29 @@ async function doLogin() {
   }
 }
 
-function doLogout() {
+// ── DEV BYPASS — remove before production ──────────────────────────────────
+function devBypassLogin() {
+  const mockRaw = {
+    employee_number: 1000,
+    username:        'manager1',
+    full_name:       'Technical Manager',
+    role:            'Technical Manager',
+    region:          'east',
+    is_active:       true,
+    color:           '#d97706',
+  };
+  currentUser        = dbUserToCurrentUser(mockRaw);
+  window.currentUser = currentUser;
+  if (!allUsers.find(u => u.employee_number === 1000)) allUsers.push(mockRaw);
+  localStorage.setItem(SESSION_KEY,     JSON.stringify({ employeeNumber: 1000 }));
+  localStorage.setItem('currentUser',   JSON.stringify(mockRaw));
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app-shell').classList.add('visible');
+  document.body.classList.add('app-active');
+  console.log('[DEV] bypass login as', currentUser.name, currentUser.role);
+  bootApp();
+}
+// ── END DEV BYPASS ──────────────────────────────────────────────────────────
   localStorage.removeItem(SESSION_KEY);
   currentUser = null;
   // Reset login form
