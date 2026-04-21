@@ -1987,104 +1987,85 @@ async function doLogin() {
   const errEl      = document.getElementById('login-error');
   const btn        = document.getElementById('login-btn');
 
-  const identifier = (usernameEl?.value || '').trim();
-  const password   = (pwdEl?.value   || '').trim();
-  if (!identifier || !password) return;
+  const input    = (usernameEl?.value || '').trim();
+  const password = (pwdEl?.value      || '').trim();
+  if (!input || !password) return;
 
-  // ── Lock UI ──
   btn.disabled    = true;
   btn.textContent = 'Logging in…';
   errEl.style.display = 'none';
 
-  console.log('[LOGIN] Attempt:', identifier);
+  console.log('[LOGIN] Attempt:', input);
 
-  // ── Helper: always restore button on failure ──
   const fail = (msg) => {
     console.error('[LOGIN] Failed:', msg);
-    errEl.textContent = msg;
-    errEl.style.display = 'block';
-    btn.disabled    = false;
-    btn.textContent = 'Log In →';
+    errEl.textContent    = msg;
+    errEl.style.display  = 'block';
+    btn.disabled         = false;
+    btn.textContent      = 'Log In →';
   };
 
   let found = null;
 
-  // ── Direct Supabase query — single call, handles username OR employee_number ──
-  if (supabaseClient) {
-    try {
-      const empNum = parseInt(identifier, 10);
-      const isNum  = !isNaN(empNum) && String(empNum) === identifier;
+  try {
+    if (!supabaseClient) throw new Error('Supabase not initialised');
 
-      let queryResult;
-      if (isNum) {
-        // Input is purely numeric — search by employee_number only
-        queryResult = await supabaseClient
-          .from('users')
-          .select('*')
-          .eq('employee_number', empNum)
-          .limit(1);
-      } else {
-        // Input is a username string — search by username (case-insensitive)
-        queryResult = await supabaseClient
-          .from('users')
-          .select('*')
-          .ilike('username', identifier)
-          .limit(1);
-      }
+    // ── Build .or() filter that works for both username (text) and employee_number (int) ──
+    // PostgREST .or() syntax: "col.operator.value"
+    // employee_number.eq only added if input is numeric
+    const empNum = parseInt(input, 10);
+    const isNum  = !isNaN(empNum) && String(empNum) === input;
+    const orFilter = isNum
+      ? `username.ilike.${input},employee_number.eq.${empNum}`
+      : `username.ilike.${input}`;
 
-      console.log('[LOGIN] Query result:', queryResult.data, queryResult.error);
+    const { data, error } = await supabaseClient
+      .from('users')
+      .select('*')
+      .or(orFilter)
+      .limit(1);
 
-      if (queryResult.error) {
-        console.warn('[LOGIN] Supabase error:', queryResult.error.message);
-        // Fall through to in-memory fallback below
-      } else if (queryResult.data && queryResult.data.length > 0) {
-        found = queryResult.data[0];
-      }
-    } catch(e) {
-      console.error('[LOGIN] Query exception:', e.message || e);
+    console.log('[LOGIN] Query result:', data, error);
+
+    if (error) throw error;
+    found = data && data.length > 0 ? data[0] : null;
+
+  } catch (e) {
+    console.warn('[LOGIN] Supabase query failed:', e.message || e, '— trying in-memory fallback');
+    // In-memory fallback — works offline or when Supabase is unavailable
+    if (allUsers.length > 0) {
+      const lower = input.toLowerCase();
+      found = allUsers.find(u =>
+        u.username?.toLowerCase() === lower ||
+        String(u.employee_number) === input
+      ) || null;
+      if (found) console.log('[LOGIN] Found via in-memory fallback');
     }
-  }
-
-  // ── In-memory fallback (works offline or if Supabase hasn't loaded yet) ──
-  if (!found && allUsers.length > 0) {
-    const lower = identifier.toLowerCase();
-    found = allUsers.find(u =>
-      u.username?.toLowerCase() === lower ||
-      String(u.employee_number) === identifier
-    ) || null;
-    if (found) console.log('[LOGIN] Found via in-memory fallback');
   }
 
   console.log('[LOGIN] User found:', found
     ? { username: found.username, employee_number: found.employee_number, role: found.role }
     : null);
 
-  // ── Validate ──
-  if (!found) {
-    return fail('⛔ User not found. Check username or employee number.');
-  }
-  if (found.is_active === false) {
-    return fail('⛔ This account is disabled. Contact your administrator.');
-  }
+  if (!found)                       return fail('⛔ User not found. Check username or employee number.');
+  if (found.is_active === false)    return fail('⛔ This account is disabled. Contact your administrator.');
   if (String(found.password) !== String(password)) {
-    pwdEl.value = '';
-    pwdEl.focus();
+    pwdEl.value = ''; pwdEl.focus();
     return fail('⛔ Wrong password. Please try again.');
   }
 
   // ── Success ──
   try {
     currentUser = dbUserToCurrentUser(found);
+    window.currentUser = currentUser;
     console.log('[LOGIN] Success:', currentUser.name, '| role:', currentUser.role, '| empNo:', currentUser.employeeNo);
 
-    // Merge into allUsers cache
-    if (!allUsers.find(u => u.employee_number === found.employee_number)) {
-      allUsers.push(found);
-    }
-
     // Persist session
+    localStorage.setItem('currentUser', JSON.stringify(found));
     localStorage.setItem(SESSION_KEY, JSON.stringify({ employeeNumber: found.employee_number }));
-    localStorage.setItem('currentUser', JSON.stringify(found));   // extra compatibility key
+
+    // Cache user
+    if (!allUsers.find(u => u.employee_number === found.employee_number)) allUsers.push(found);
 
     // Transition to app
     document.getElementById('login-screen').classList.add('hidden');
@@ -2093,8 +2074,8 @@ async function doLogin() {
     btn.textContent = 'Log In →';
     bootApp();
   } catch(e) {
-    console.error('[LOGIN] bootApp error:', e.message || e);
-    fail('⛔ Login error: ' + (e.message || 'unknown error'));
+    console.error('[LOGIN] bootApp crashed:', e.message || e);
+    fail('⛔ Login error: ' + (e.message || 'unknown'));
   }
 }
 
