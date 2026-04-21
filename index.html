@@ -1934,23 +1934,29 @@ function techColor(idOrName) {
 }
 // Get all technician accounts (from live users, fall back to legacy array)
 function getAllTechnicians() {
-  const live = allUsers.filter(u => u.role === 'technician' && u.is_active !== false);
+  const live = allUsers.filter(u => normaliseRole(u.role) === 'technician' && u.is_active !== false);
   if (live.length > 0) return live.map(u => ({
-    employeeNo: u.employee_number || u.id,
-    name: u.full_name,
-    color: u.color || '#6b7280',
-    title: u.title || 'Technician',
-    region: u.region || null,
+    employeeNo:   String(u.employee_number),
+    name:         u.full_name,
+    color:        u.color || '#6b7280',
+    title:        u.title || 'Technician',
+    region:       u.region || null,
+    supervisor_id: u.supervisor_id != null ? String(u.supervisor_id) : null,
   }));
   return technicianAccounts;
 }
-// Region-filtered technicians (for supervisor role)
+// Region-filtered technicians (for supervisor role — scoped to their team by supervisor_id)
 function getTechsForCurrentUser() {
   const techs = getAllTechnicians();
   if (!currentUser) return techs;
   if (['admin','technical_manager'].includes(currentUser.role)) return techs;
-  if (currentUser.role === 'regional_supervisor' && currentUser.region) {
-    return techs.filter(t => t.region === currentUser.region);
+  if (currentUser.role === 'regional_supervisor') {
+    const myEmpNo = String(currentUser.employeeNo || currentUser.employee_number || '');
+    const myRegion = currentUser.region;
+    // Prefer supervisor_id match; fall back to region-only if supervisor_id not set
+    const bySupId = techs.filter(t => String(t.supervisor_id) === myEmpNo);
+    if (bySupId.length > 0) return bySupId;
+    if (myRegion) return techs.filter(t => t.region === myRegion);
   }
   return techs;
 }
@@ -2529,7 +2535,7 @@ function goPage(id) {
   if (id==='workload') renderWorkload();
   if (id==='my-jobs') renderMyJobs();
   if (id==='my-requests') renderMyRequests();
-  if (id==='admin') renderAdmin();
+  if (id==='admin') renderAdmin();   // async — fires and runs in background
   const mc = document.getElementById('main-content');
   if(mc) mc.scrollTop=0; else window.scrollTo(0,0);
   closeMenu();
@@ -3871,6 +3877,9 @@ function closeTechVisit() {
 async function renderAdmin() {
   const el   = document.getElementById('admin-user-list');
   const ukpi = document.getElementById('admin-user-count');
+  const role = currentUser?.role;
+  const isAdmin   = ['admin','technical_manager'].includes(role);
+  const isSupervisor = role === 'regional_supervisor';
 
   // ── Stats (tickets) ──
   const s = getStats();
@@ -3882,30 +3891,50 @@ async function renderAdmin() {
   if (aoEl) aoEl.textContent = s.open;
   if (!el) return;
 
-  // ── Show loading state ──
+  // ── Update page header for supervisor ──
+  const pageTitle = document.querySelector('#page-admin .page-title');
+  const pageSub   = document.querySelector('#page-admin .page-sub');
+  const newUserBtn = document.querySelector('#page-admin .btn-p');
+  if (isSupervisor) {
+    if (pageTitle) pageTitle.innerHTML = 'My <span>Team</span>';
+    if (pageSub)   pageSub.textContent = 'Your assigned technicians';
+    if (newUserBtn) newUserBtn.style.display = 'none';
+  } else {
+    if (pageTitle) pageTitle.innerHTML = 'Admin <span>Panel</span>';
+    if (pageSub)   pageSub.textContent = 'User management & platform control';
+    if (newUserBtn) newUserBtn.style.display = '';
+  }
+
   el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px;">Loading users…</div>';
 
-  // ── Fetch all users directly from Supabase ──
-  let users = [];
+  // ── Always load fresh from Supabase ──
   try {
-    if (supabaseClient) {
-      const { data, error } = await supabaseClient
-        .from('users')
-        .select('*')
-        .order('employee_number');
-      if (error) throw error;
-      users = data || [];
-      // Sync into allUsers cache so edit/disable modals work
-      allUsers = users;
-      console.log('[Admin] Loaded', users.length, 'users from Supabase');
-    } else {
-      users = allUsers;
-    }
+    await loadUsersFromDB();
+    console.log('[Admin] renderAdmin: loaded', allUsers.length, 'users');
   } catch(e) {
-    console.error('[Admin] Failed to load users:', e.message);
-    // Fall back to whatever is in allUsers cache
-    users = allUsers;
-    el.innerHTML += '<div style="padding:8px 14px;font-size:11px;color:var(--warn);">⚠️ Could not refresh from database — showing cached data.</div>';
+    console.error('[Admin] loadUsersFromDB failed:', e.message);
+  }
+
+  // ── Determine which users to show ──
+  let users = [];
+  if (isAdmin) {
+    // Admin / Tech Manager: see ALL users
+    users = [...allUsers];
+  } else if (isSupervisor) {
+    // Regional Supervisor: only MY team (by supervisor_id match, fallback region)
+    const myEmpNo  = String(currentUser.employeeNo || currentUser.employee_number || '');
+    const myRegion = currentUser.region;
+    users = allUsers.filter(u => {
+      const normRole = normaliseRole(u.role);
+      if (normRole !== 'technician') return false;
+      if (u.supervisor_id != null && String(u.supervisor_id) === myEmpNo) return true;
+      if (!u.supervisor_id && u.region === myRegion) return true;
+      return false;
+    });
+    console.log('[Admin] Supervisor', myEmpNo, 'sees', users.length, 'technicians');
+  } else {
+    el.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:13px;">Access restricted.</div>';
+    return;
   }
 
   if (ukpi) ukpi.textContent = users.length;
@@ -3924,18 +3953,14 @@ async function renderAdmin() {
     requester_commercial:'background:#e0e7ff;color:#4338ca',
   };
   const roleLabels = {
-    admin:'Admin',
-    technical_manager:'Tech Manager',
-    regional_supervisor:'Supervisor',
-    technician:'Technician',
-    requester_consumer:'Requester',
-    requester_commercial:'Requester (Comm)',
+    admin:'Admin', technical_manager:'Tech Manager',
+    regional_supervisor:'Supervisor', technician:'Technician',
+    requester_consumer:'Requester', requester_commercial:'Requester (Comm)',
   };
   const regionBadge = r => r
     ? `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(0,90,169,.1);color:var(--p);font-weight:700;margin-left:4px;">${r.charAt(0).toUpperCase()+r.slice(1)}</span>`
     : '';
 
-  // Sort: by role priority then name
   const order = ['admin','technical_manager','regional_supervisor','technician','requester_consumer','requester_commercial'];
   const sorted = [...users].sort((a,b) => {
     const ra = normaliseRole(a.role), rb = normaliseRole(b.role);
@@ -3945,10 +3970,10 @@ async function renderAdmin() {
   });
 
   el.innerHTML = sorted.map(u => {
-    const inactive   = u.is_active === false;
-    const normRole   = normaliseRole(u.role);
-    const roleStyle  = roleColors[normRole] || 'background:#f3f4f6;color:#374151';
-    const roleLabel  = roleLabels[normRole] || u.role || '—';
+    const inactive  = u.is_active === false;
+    const normRole  = normaliseRole(u.role);
+    const roleStyle = roleColors[normRole] || 'background:#f3f4f6;color:#374151';
+    const roleLabel = roleLabels[normRole] || u.role || '—';
     return `
     <div class="admin-user-row" style="${inactive ? 'opacity:.5;' : ''}">
       <div style="width:36px;height:36px;border-radius:50%;background:${u.color||'#6b7280'};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;color:#fff;flex-shrink:0;">${initials(u.full_name)}</div>
@@ -4032,22 +4057,49 @@ function openEditUser(empNum) {
   empNum = parseInt(empNum, 10);
   const u = allUsers.find(x => x.employee_number === empNum);
   if (!u) { showToast('User not found'); return; }
+
+  const role        = currentUser?.role;
+  const isSupervisor = role === 'regional_supervisor';
+  const isAdmin     = ['admin','technical_manager'].includes(role);
+
+  // Supervisor: check this user belongs to their team
+  if (isSupervisor) {
+    const myEmpNo  = String(currentUser.employeeNo || currentUser.employee_number || '');
+    const myRegion = currentUser.region;
+    const onMyTeam = String(u.supervisor_id) === myEmpNo ||
+                     (!u.supervisor_id && u.region === myRegion && normaliseRole(u.role) === 'technician');
+    if (!onMyTeam) {
+      showToast('⛔ You can only manage your own team');
+      return;
+    }
+  }
+
   document.getElementById('um-modal-title').textContent = 'Edit User';
-  document.getElementById('um-emp-id').value    = empNum;             // integer employee_number
+  document.getElementById('um-emp-id').value    = empNum;
   document.getElementById('um-fullname').value  = u.full_name  || '';
   document.getElementById('um-empno').value     = u.employee_number || '';
   document.getElementById('um-username').value  = u.username   || '';
-  document.getElementById('um-password').value  = '';                 // never pre-fill
+  document.getElementById('um-password').value  = '';
   document.getElementById('um-role').value      = u.role       || 'technician';
   document.getElementById('um-region').value    = u.region     || '';
   document.getElementById('um-color').value     = u.color      || '#005AA9';
   document.getElementById('um-error').style.display = 'none';
-  populateReportingDropdowns(empNum);
-  // Set supervisor / manager selects after options are populated
-  const supEl = document.getElementById('um-supervisor');
-  const mgrEl = document.getElementById('um-manager');
-  if (supEl) supEl.value = u.supervisor_id != null ? String(u.supervisor_id) : '';
-  if (mgrEl) mgrEl.value = u.manager_id    != null ? String(u.manager_id)    : '';
+
+  // Supervisor: lock structural fields (can only edit name, password, active)
+  const lock = isSupervisor;
+  ['um-empno','um-username','um-role','um-region','um-color','um-supervisor','um-manager'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = lock;
+  });
+  document.getElementById('um-modal-title').textContent = lock ? 'Edit Technician' : 'Edit User';
+
+  if (isAdmin) {
+    populateReportingDropdowns(empNum);
+    const supEl = document.getElementById('um-supervisor');
+    const mgrEl = document.getElementById('um-manager');
+    if (supEl) supEl.value = u.supervisor_id != null ? String(u.supervisor_id) : '';
+    if (mgrEl) mgrEl.value = u.manager_id    != null ? String(u.manager_id)    : '';
+  }
   toggleRegionField();
   openModal('user-mgmt-modal');
 }
@@ -4063,7 +4115,7 @@ function toggleRegionField() {
 
 // ── Save user (create or update) — employee_number is the integer PK ──
 async function saveUserForm() {
-  const empIdInput  = document.getElementById('um-emp-id').value.trim();   // integer as string, or ''
+  const empIdInput  = document.getElementById('um-emp-id').value.trim();
   const fullName    = document.getElementById('um-fullname').value.trim();
   const empNoRaw    = document.getElementById('um-empno').value.trim();
   const username    = document.getElementById('um-username').value.trim().toLowerCase();
@@ -4076,7 +4128,46 @@ async function saveUserForm() {
   const errEl       = document.getElementById('um-error');
   const saveBtn     = document.getElementById('um-save-btn');
 
-  // ── Validation ──
+  const isSupervisor = currentUser?.role === 'regional_supervisor';
+
+  // ── Supervisor restricted save: only full_name, password, is_active ──
+  if (isSupervisor && empIdInput) {
+    const targetEmpNum = parseInt(empIdInput, 10);
+    const targetUser   = allUsers.find(u => u.employee_number === targetEmpNum);
+    const myEmpNo      = String(currentUser.employeeNo || currentUser.employee_number || '');
+    const myRegion     = currentUser.region;
+    const onMyTeam     = targetUser && (
+      String(targetUser.supervisor_id) === myEmpNo ||
+      (!targetUser.supervisor_id && targetUser.region === myRegion && normaliseRole(targetUser.role) === 'technician')
+    );
+    if (!onMyTeam) {
+      errEl.textContent = 'You can only manage your own team.';
+      errEl.style.display = 'block'; return;
+    }
+    if (!fullName) { errEl.textContent = 'Full name is required.'; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none';
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+    const restrictedPayload = { full_name: fullName, updated_at: new Date().toISOString() };
+    if (password) restrictedPayload.password = password;
+    console.log('[Users] Supervisor saving restricted payload:', restrictedPayload);
+    if (supabaseClient) {
+      const { error } = await supabaseClient.from(USERS_TABLE)
+        .update(restrictedPayload).eq('employee_number', targetEmpNum);
+      if (error) {
+        errEl.textContent = 'Save failed: ' + error.message;
+        errEl.style.display = 'block';
+        saveBtn.disabled = false; saveBtn.textContent = 'Save User'; return;
+      }
+    }
+    if (targetUser) Object.assign(targetUser, restrictedPayload);
+    saveBtn.disabled = false; saveBtn.textContent = 'Save User';
+    closeModal('user-mgmt-modal');
+    renderAdmin();
+    showToast(`✅ ${fullName} updated`);
+    return;
+  }
+
+  // ── Admin / Tech Manager full save ──
   if (!fullName)  { errEl.textContent='Full name is required.';  errEl.style.display='block'; return; }
   if (!username)  { errEl.textContent='Username is required.';   errEl.style.display='block'; return; }
   if (!empNoRaw)  { errEl.textContent='Employee number is required.'; errEl.style.display='block'; return; }
@@ -4095,19 +4186,17 @@ async function saveUserForm() {
   saveBtn.disabled    = true;
   saveBtn.textContent = 'Saving…';
 
-  const isEdit       = !!empIdInput;
-  const originalEmpNum = isEdit ? parseInt(empIdInput, 10) : null;
-  const now          = new Date().toISOString();
+  const isEdit         = !!empIdInput;
+  const now            = new Date().toISOString();
 
-  // ── Build payload — all IDs are integers ──
   const payload = {
-    employee_number: empNoInt,                                      // integer PK
+    employee_number: empNoInt,
     full_name:       fullName,
     username,
     role,
     region:          region || null,
-    supervisor_id:   supervisorRaw ? parseInt(supervisorRaw, 10) : null,  // integer
-    manager_id:      managerRaw    ? parseInt(managerRaw,    10) : null,  // integer
+    supervisor_id:   supervisorRaw ? parseInt(supervisorRaw, 10) : null,
+    manager_id:      managerRaw    ? parseInt(managerRaw,    10) : null,
     color,
     is_active:       true,
     updated_at:      now,
