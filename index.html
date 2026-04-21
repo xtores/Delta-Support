@@ -573,13 +573,8 @@ body.app-active{padding-bottom:var(--bnav);}
       </div>
       <div id="login-error" style="margin-top:10px;">⛔ Incorrect username or password.</div>
 
-      <button class="login-btn" id="login-btn" onclick="doLogin()" style="margin-top:20px;">
+      <button class="login-btn" id="login-btn" disabled onclick="doLogin()" style="margin-top:20px;">
         Log In →
-      </button>
-
-      <!-- ── DEV BYPASS — remove before production ── -->
-      <button onclick="devBypassLogin()" style="margin-top:10px;width:100%;padding:10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">
-        ⚡ Bypass Login (Dev)
       </button>
     </div>
   </div>
@@ -941,62 +936,6 @@ body.app-active{padding-bottom:var(--bnav);}
   <!-- BOTTOM NAV -->
   <nav class="bottom-nav" id="bottom-nav"></nav>
 </div><!-- /app-shell -->
-
-<!-- ══ EMERGENCY DEV BYPASS — runs before main script ══ -->
-<script>
-(function () {
-  window.addEventListener('load', function () {
-    try {
-      const login = document.getElementById('login-screen');
-      const app   = document.getElementById('app-shell');
-
-      const mockRaw = {
-        employee_number: 1000,
-        username:  'manager1',
-        full_name: 'Technical Manager',
-        role:      'Technical Manager',
-        region:    'east',
-        is_active: true,
-        color:     '#d97706'
-      };
-
-      window.currentUser = {
-        employeeNo:      '1000',
-        employee_number: 1000,
-        id:              '1000',
-        username:        'manager1',
-        name:            'Technical Manager',
-        full_name:       'Technical Manager',
-        role:            'Technical Manager',
-        region:          'east',
-        color:           '#d97706',
-        avatar:          'TM',
-        roleLabel:       'Technical Manager'
-      };
-
-      try {
-        localStorage.setItem('currentUser',         JSON.stringify(mockRaw));
-        localStorage.setItem('df_hub_session_v4',   JSON.stringify({ employeeNumber: 1000 }));
-      } catch(e) { console.warn('[BYPASS] storage failed', e); }
-
-      if (login) login.style.display = 'none';
-      if (app)   app.style.display   = 'flex';
-      document.body.classList.add('app-active');
-
-      console.log('[EMERGENCY BYPASS] app opened, currentUser =', window.currentUser);
-
-      if (typeof bootApp === 'function') {
-        try { bootApp(); } catch(e) { console.error('[BYPASS] bootApp failed', e); }
-      } else {
-        console.warn('[BYPASS] bootApp not yet defined — will run when main script loads');
-      }
-    } catch(e) {
-      console.error('[EMERGENCY BYPASS ERROR]', e);
-    }
-  });
-})();
-</script>
-<!-- ══ END EMERGENCY DEV BYPASS ══════════════════════ -->
 
 <!-- NEW TICKET MODAL -->
 <div class="modal-overlay" id="new-ticket-modal" onclick="handleModalBg(event,'new-ticket-modal')">
@@ -2030,15 +1969,10 @@ function getDemoUsers() {
 // ══════════════════════════════
 
 function updateLoginBtn() {
-  const u   = (document.getElementById('login-username')?.value || '').trim();
-  const p   = (document.getElementById('login-pwd')?.value      || '').trim();
+  const u = (document.getElementById('login-username')?.value || '').trim();
+  const p = (document.getElementById('login-pwd')?.value || '').trim();
   const btn = document.getElementById('login-btn');
   if (btn) btn.disabled = !(u && p);
-  console.log('[LOGIN BTN]', {
-    username: document.getElementById('login-username')?.value,
-    password: document.getElementById('login-pwd')?.value ? '***' : '',
-    disabled: document.getElementById('login-btn')?.disabled,
-  });
 }
 
 function renderLoginScreen() {
@@ -2053,153 +1987,121 @@ async function doLogin() {
   const errEl      = document.getElementById('login-error');
   const btn        = document.getElementById('login-btn');
 
-  const input    = (usernameEl?.value || '').trim();
-  const password = (pwdEl?.value      || '').trim();
-  if (!input || !password) return;
+  const identifier = (usernameEl?.value || '').trim();
+  const password   = (pwdEl?.value   || '').trim();
+  if (!identifier || !password) return;
 
+  // ── Lock UI ──
   btn.disabled    = true;
   btn.textContent = 'Logging in…';
   errEl.style.display = 'none';
 
-  console.log('[LOGIN] ── START ──────────────────────────');
-  console.log('[LOGIN] Input:', input, '| password length:', password.length);
-  console.log('[LOGIN] supabaseClient ready:', !!supabaseClient);
+  console.log('[LOGIN] Attempt:', identifier);
 
+  // ── Helper: always restore button on failure ──
   const fail = (msg) => {
-    console.error('[LOGIN] FAIL:', msg);
-    errEl.textContent   = msg;
+    console.error('[LOGIN] Failed:', msg);
+    errEl.textContent = msg;
     errEl.style.display = 'block';
-    btn.disabled        = false;
-    btn.textContent     = 'Log In →';
+    btn.disabled    = false;
+    btn.textContent = 'Log In →';
   };
 
-  // ── STEP 1: Supabase query ──────────────────────────────────────────────────
   let found = null;
-  try {
-    if (!supabaseClient) throw new Error('supabaseClient is not initialised');
 
-    const empNum  = parseInt(input, 10);
-    const isNum   = !isNaN(empNum) && String(empNum) === input;
-    const orFilter = isNum
-      ? `username.ilike.${input},employee_number.eq.${empNum}`
-      : `username.ilike.${input}`;
+  // ── Direct Supabase query — single call, handles username OR employee_number ──
+  if (supabaseClient) {
+    try {
+      const empNum = parseInt(identifier, 10);
+      const isNum  = !isNaN(empNum) && String(empNum) === identifier;
 
-    console.log('[LOGIN] Querying users table with or:', orFilter);
+      let queryResult;
+      if (isNum) {
+        // Input is purely numeric — search by employee_number only
+        queryResult = await supabaseClient
+          .from('users')
+          .select('*')
+          .eq('employee_number', empNum)
+          .limit(1);
+      } else {
+        // Input is a username string — search by username (case-insensitive)
+        queryResult = await supabaseClient
+          .from('users')
+          .select('*')
+          .ilike('username', identifier)
+          .limit(1);
+      }
 
-    const { data, error } = await supabaseClient
-      .from('users')
-      .select('*')
-      .or(orFilter)
-      .limit(1);
+      console.log('[LOGIN] Query result:', queryResult.data, queryResult.error);
 
-    console.log('[LOGIN] Raw Supabase response — data:', data, '| error:', error);
-
-    if (error) throw error;
-    found = data && data.length > 0 ? data[0] : null;
-
-  } catch(e) {
-    console.warn('[LOGIN] Supabase query failed:', e.message || e);
-    // In-memory fallback
-    if (allUsers.length > 0) {
-      const lower = input.toLowerCase();
-      found = allUsers.find(u =>
-        u.username?.toLowerCase() === lower ||
-        String(u.employee_number) === input
-      ) || null;
-      console.log('[LOGIN] In-memory fallback result:', found ? found.username : null);
+      if (queryResult.error) {
+        console.warn('[LOGIN] Supabase error:', queryResult.error.message);
+        // Fall through to in-memory fallback below
+      } else if (queryResult.data && queryResult.data.length > 0) {
+        found = queryResult.data[0];
+      }
+    } catch(e) {
+      console.error('[LOGIN] Query exception:', e.message || e);
     }
   }
 
-  console.log('[LOGIN] User found:', found
-    ? { username: found.username, employee_number: found.employee_number, role: found.role, is_active: found.is_active }
-    : 'NOT FOUND');
+  // ── In-memory fallback (works offline or if Supabase hasn't loaded yet) ──
+  if (!found && allUsers.length > 0) {
+    const lower = identifier.toLowerCase();
+    found = allUsers.find(u =>
+      u.username?.toLowerCase() === lower ||
+      String(u.employee_number) === identifier
+    ) || null;
+    if (found) console.log('[LOGIN] Found via in-memory fallback');
+  }
 
-  // ── STEP 2: Validation ─────────────────────────────────────────────────────
+  console.log('[LOGIN] User found:', found
+    ? { username: found.username, employee_number: found.employee_number, role: found.role }
+    : null);
+
+  // ── Validate ──
   if (!found) {
     return fail('⛔ User not found. Check username or employee number.');
   }
   if (found.is_active === false) {
     return fail('⛔ This account is disabled. Contact your administrator.');
   }
-
-  console.log('[LOGIN] Password check — stored:', String(found.password), '| entered:', String(password), '| match:', String(found.password) === String(password));
-
   if (String(found.password) !== String(password)) {
-    pwdEl.value = ''; pwdEl.focus();
+    pwdEl.value = '';
+    pwdEl.focus();
     return fail('⛔ Wrong password. Please try again.');
   }
 
-  console.log('[LOGIN] Password OK — proceeding to success path');
-
-  // ── STEP 3: Success ────────────────────────────────────────────────────────
+  // ── Success ──
   try {
     currentUser = dbUserToCurrentUser(found);
-    console.log('[LOGIN] mapped currentUser:', currentUser);
+    console.log('[LOGIN] Success:', currentUser.name, '| role:', currentUser.role, '| empNo:', currentUser.employeeNo);
 
-    window.currentUser = currentUser;
+    // Merge into allUsers cache
+    if (!allUsers.find(u => u.employee_number === found.employee_number)) {
+      allUsers.push(found);
+    }
 
+    // Persist session
     localStorage.setItem(SESSION_KEY, JSON.stringify({ employeeNumber: found.employee_number }));
-    localStorage.setItem('currentUser', JSON.stringify(found));
-    console.log('[LOGIN] session saved to localStorage');
+    localStorage.setItem('currentUser', JSON.stringify(found));   // extra compatibility key
 
-    // Cache into allUsers
-    if (!allUsers.find(u => u.employee_number === found.employee_number)) allUsers.push(found);
-
+    // Transition to app
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app-shell').classList.add('visible');
     document.body.classList.add('app-active');
     btn.textContent = 'Log In →';
-    console.log('[LOGIN] DOM updated — login hidden, app-shell visible');
-
-    console.log('[LOGIN] before bootApp');
-    bootApp();
-    console.log('[LOGIN] after bootApp — login complete ✓');
-
-  } catch(e) {
-    console.error('[LOGIN SUCCESS PATH ERROR]', e);
-    errEl.textContent  = e.message || 'Login success path failed';
-    errEl.style.display = 'block';
-    btn.disabled       = false;
-    btn.textContent    = 'Log In →';
-  }
-}
-
-// ── DEV BYPASS — remove before production ──────────────────────────────────
-function devBypassLogin() {
-  try {
-    const mockRaw = {
-      employee_number: 1000,
-      username:        'manager1',
-      full_name:       'Technical Manager',
-      role:            'Technical Manager',
-      region:          'east',
-      is_active:       true,
-      color:           '#d97706',
-    };
-    currentUser        = dbUserToCurrentUser(mockRaw);
-    window.currentUser = currentUser;
-    if (!Array.isArray(allUsers)) allUsers = [];
-    if (!allUsers.find(u => u.employee_number === 1000)) allUsers.push(mockRaw);
-    localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: 1000 }));
-    localStorage.setItem('currentUser', JSON.stringify(mockRaw));
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('app-shell').classList.add('visible');
-    document.body.classList.add('app-active');
-    console.log('[DEV] bypass login as', currentUser.name, currentUser.role);
     bootApp();
   } catch(e) {
-    console.error('[DEV BYPASS ERROR]', e);
-    const errEl = document.getElementById('login-error');
-    if (errEl) { errEl.textContent = e.message || 'Dev bypass failed'; errEl.style.display = 'block'; }
+    console.error('[LOGIN] bootApp error:', e.message || e);
+    fail('⛔ Login error: ' + (e.message || 'unknown error'));
   }
 }
-// ── END DEV BYPASS ──────────────────────────────────────────────────────────
 
 function doLogout() {
   localStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem('currentUser');
-  currentUser        = null;
-  window.currentUser = null;
+  currentUser = null;
+  // Reset login form
   const u = document.getElementById('login-username');
   const p = document.getElementById('login-pwd');
   const e = document.getElementById('login-error');
@@ -2207,7 +2109,7 @@ function doLogout() {
   if (u) u.value = '';
   if (p) p.value = '';
   if (e) e.style.display = 'none';
-  if (b) { b.disabled = false; b.textContent = 'Log In →'; }
+  if (b) { b.disabled = true; b.textContent = 'Log In →'; }
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-shell').classList.remove('visible');
   document.body.classList.remove('app-active');
@@ -4549,39 +4451,66 @@ async function loadFromSupabase() {
 // ══════════════════════════════
 //   INIT
 // ══════════════════════════════
-function forceDevSession() {
-  const mockRaw = {
-    employee_number: 1000,
-    username:   'manager1',
-    full_name:  'Technical Manager',
-    role:       'Technical Manager',
-    region:     'east',
-    is_active:  true,
-    color:      '#d97706'
-  };
-  currentUser = typeof dbUserToCurrentUser === 'function'
-    ? dbUserToCurrentUser(mockRaw)
-    : { employeeNo:'1000', name:'Technical Manager', role:'technical_manager', region:'east', color:'#d97706', avatar:'TM', roleLabel:'Technical Manager', id:'1000' };
-  window.currentUser = currentUser;
-  try {
-    localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: 1000 }));
-    localStorage.setItem('currentUser', JSON.stringify(mockRaw));
-  } catch(e) { console.warn('Session storage failed:', e); }
-  if (!Array.isArray(allUsers)) allUsers = [];
-  if (!allUsers.find(u => u.employee_number === 1000)) allUsers.push(mockRaw);
-  const login = document.getElementById('login-screen');
-  const app   = document.getElementById('app-shell');
-  if (login) login.classList.add('hidden');
-  if (app)   app.classList.add('visible');
-  document.body.classList.add('app-active');
-  console.log('[DEV AUTO BYPASS] currentUser =', currentUser);
-  if (typeof bootApp === 'function') bootApp();
-  else console.error('bootApp is missing');
-}
+(async function init() {
+  // ── Show login screen immediately — do NOT block on loadUsersFromDB ──
+  // The login form uses a direct Supabase query, so it works without allUsers.
+  document.getElementById('login-screen').style.display = 'block';
 
-window.addEventListener('load', () => {
-  forceDevSession();
-});
+  // ── Try to restore a previous session ──
+  try {
+    const sess = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    const empNum = sess?.employeeNumber ?? (sess?.userId ? parseInt(sess.userId, 10) || null : null);
+
+    if (empNum && supabaseClient) {
+      // Query Supabase directly for the session user — no allUsers needed
+      const { data: sessionRows, error } = await supabaseClient
+        .from('users')
+        .select('*')
+        .eq('employee_number', empNum)
+        .limit(1);
+
+      const sessionUser = (!error && sessionRows && sessionRows.length > 0) ? sessionRows[0] : null;
+
+      if (sessionUser && sessionUser.is_active !== false) {
+        currentUser = dbUserToCurrentUser(sessionUser);
+        // Seed into allUsers cache
+        allUsers = [sessionUser];
+        console.log('[Auth] session restored', currentUser.name, '|', currentUser.role, '| empNo:', currentUser.employeeNo);
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app-shell').classList.add('visible');
+        document.body.classList.add('app-active');
+        // Load the full user list in the background for admin/assignment panels
+        loadUsersFromDB().catch(e => console.warn('[Auth] background user load failed:', e.message));
+        bootApp();
+        return;
+      }
+      // Session invalid — clear it
+      localStorage.removeItem(SESSION_KEY);
+    } else if (empNum) {
+      // No Supabase — try in-memory fallback
+      await loadUsersFromDB().catch(() => {});
+      const found = allUsers.find(u => u.employee_number === empNum);
+      if (found && found.is_active !== false) {
+        currentUser = dbUserToCurrentUser(found);
+        console.log('[Auth] session restored (offline)', currentUser.name);
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app-shell').classList.add('visible');
+        document.body.classList.add('app-active');
+        bootApp();
+        return;
+      }
+      localStorage.removeItem(SESSION_KEY);
+    }
+  } catch(e) {
+    console.warn('[Auth] session restore error:', e.message);
+  }
+
+  // ── No valid session — show login and load users in the background ──
+  document.getElementById('login-username')?.focus();
+  // Load users in background so allUsers is ready for the admin panel
+  // and as a fallback if Supabase is slow during doLogin
+  loadUsersFromDB().catch(e => console.warn('[Auth] background user load failed:', e.message));
+})();
 </script>
 
 <!-- ══════════════════════════════════════════════════
@@ -5274,39 +5203,6 @@ function buildActionReportHTML(t) {
   window.addEventListener('offline', updateOnlineStatus);
   updateOnlineStatus();
 })();
-</script>
-
-<!-- ══════════════════════════════════════════
-     LOGIN BUTTON ENABLE/DISABLE  (v13)
-     Runs after DOM is ready to guarantee
-     button state is always correct.
-══════════════════════════════════════════ -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  const uEl  = document.getElementById('login-username');
-  const pEl  = document.getElementById('login-pwd');
-  const btn  = document.getElementById('login-btn');
-
-  // Wire all input events — covers typing, paste, autofill, mobile
-  ['input', 'change', 'keyup', 'paste'].forEach(function(evt) {
-    if (uEl) uEl.addEventListener(evt, updateLoginBtn);
-    if (pEl) pEl.addEventListener(evt, updateLoginBtn);
-  });
-
-  // Set correct initial state (handles browser autofill on page load)
-  updateLoginBtn();
-
-  // Extra safety: re-check after 500ms for autofill that fires late
-  setTimeout(updateLoginBtn, 500);
-
-  // Make button always clickable as fallback — doLogin() guards empty fields itself
-  if (btn) {
-    btn.addEventListener('click', function(e) {
-      e.preventDefault();
-      doLogin();
-    });
-  }
-});
 </script>
 </body>
 </html>
