@@ -2110,30 +2110,40 @@ async function doLogin() {
 
 // ── DEV BYPASS — remove before production ──────────────────────────────────
 function devBypassLogin() {
-  const mockRaw = {
-    employee_number: 1000,
-    username:        'manager1',
-    full_name:       'Technical Manager',
-    role:            'Technical Manager',
-    region:          'east',
-    is_active:       true,
-    color:           '#d97706',
-  };
-  currentUser        = dbUserToCurrentUser(mockRaw);
-  window.currentUser = currentUser;
-  if (!allUsers.find(u => u.employee_number === 1000)) allUsers.push(mockRaw);
-  localStorage.setItem(SESSION_KEY,     JSON.stringify({ employeeNumber: 1000 }));
-  localStorage.setItem('currentUser',   JSON.stringify(mockRaw));
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app-shell').classList.add('visible');
-  document.body.classList.add('app-active');
-  console.log('[DEV] bypass login as', currentUser.name, currentUser.role);
-  bootApp();
+  try {
+    const mockRaw = {
+      employee_number: 1000,
+      username:        'manager1',
+      full_name:       'Technical Manager',
+      role:            'Technical Manager',
+      region:          'east',
+      is_active:       true,
+      color:           '#d97706',
+    };
+    currentUser        = dbUserToCurrentUser(mockRaw);
+    window.currentUser = currentUser;
+    if (!Array.isArray(allUsers)) allUsers = [];
+    if (!allUsers.find(u => u.employee_number === 1000)) allUsers.push(mockRaw);
+    localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: 1000 }));
+    localStorage.setItem('currentUser', JSON.stringify(mockRaw));
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app-shell').classList.add('visible');
+    document.body.classList.add('app-active');
+    console.log('[DEV] bypass login as', currentUser.name, currentUser.role);
+    bootApp();
+  } catch(e) {
+    console.error('[DEV BYPASS ERROR]', e);
+    const errEl = document.getElementById('login-error');
+    if (errEl) { errEl.textContent = e.message || 'Dev bypass failed'; errEl.style.display = 'block'; }
+  }
 }
 // ── END DEV BYPASS ──────────────────────────────────────────────────────────
+
+function doLogout() {
   localStorage.removeItem(SESSION_KEY);
-  currentUser = null;
-  // Reset login form
+  localStorage.removeItem('currentUser');
+  currentUser        = null;
+  window.currentUser = null;
   const u = document.getElementById('login-username');
   const p = document.getElementById('login-pwd');
   const e = document.getElementById('login-error');
@@ -2141,7 +2151,7 @@ function devBypassLogin() {
   if (u) u.value = '';
   if (p) p.value = '';
   if (e) e.style.display = 'none';
-  if (b) { b.disabled = true; b.textContent = 'Log In →'; }
+  if (b) { b.disabled = false; b.textContent = 'Log In →'; }
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-shell').classList.remove('visible');
   document.body.classList.remove('app-active');
