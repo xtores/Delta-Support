@@ -942,6 +942,62 @@ body.app-active{padding-bottom:var(--bnav);}
   <nav class="bottom-nav" id="bottom-nav"></nav>
 </div><!-- /app-shell -->
 
+<!-- ══ EMERGENCY DEV BYPASS — runs before main script ══ -->
+<script>
+(function () {
+  window.addEventListener('load', function () {
+    try {
+      const login = document.getElementById('login-screen');
+      const app   = document.getElementById('app-shell');
+
+      const mockRaw = {
+        employee_number: 1000,
+        username:  'manager1',
+        full_name: 'Technical Manager',
+        role:      'Technical Manager',
+        region:    'east',
+        is_active: true,
+        color:     '#d97706'
+      };
+
+      window.currentUser = {
+        employeeNo:      '1000',
+        employee_number: 1000,
+        id:              '1000',
+        username:        'manager1',
+        name:            'Technical Manager',
+        full_name:       'Technical Manager',
+        role:            'Technical Manager',
+        region:          'east',
+        color:           '#d97706',
+        avatar:          'TM',
+        roleLabel:       'Technical Manager'
+      };
+
+      try {
+        localStorage.setItem('currentUser',         JSON.stringify(mockRaw));
+        localStorage.setItem('df_hub_session_v4',   JSON.stringify({ employeeNumber: 1000 }));
+      } catch(e) { console.warn('[BYPASS] storage failed', e); }
+
+      if (login) login.style.display = 'none';
+      if (app)   app.style.display   = 'flex';
+      document.body.classList.add('app-active');
+
+      console.log('[EMERGENCY BYPASS] app opened, currentUser =', window.currentUser);
+
+      if (typeof bootApp === 'function') {
+        try { bootApp(); } catch(e) { console.error('[BYPASS] bootApp failed', e); }
+      } else {
+        console.warn('[BYPASS] bootApp not yet defined — will run when main script loads');
+      }
+    } catch(e) {
+      console.error('[EMERGENCY BYPASS ERROR]', e);
+    }
+  });
+})();
+</script>
+<!-- ══ END EMERGENCY DEV BYPASS ══════════════════════ -->
+
 <!-- NEW TICKET MODAL -->
 <div class="modal-overlay" id="new-ticket-modal" onclick="handleModalBg(event,'new-ticket-modal')">
   <div class="modal-sheet">
