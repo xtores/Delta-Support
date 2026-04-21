@@ -573,7 +573,7 @@ body.app-active{padding-bottom:var(--bnav);}
       </div>
       <div id="login-error" style="margin-top:10px;">⛔ Incorrect username or password.</div>
 
-      <button class="login-btn" id="login-btn" disabled onclick="doLogin()" style="margin-top:20px;">
+      <button class="login-btn" id="login-btn" onclick="doLogin()" style="margin-top:20px;">
         Log In →
       </button>
     </div>
@@ -1969,10 +1969,15 @@ function getDemoUsers() {
 // ══════════════════════════════
 
 function updateLoginBtn() {
-  const u = (document.getElementById('login-username')?.value || '').trim();
-  const p = (document.getElementById('login-pwd')?.value || '').trim();
+  const u   = (document.getElementById('login-username')?.value || '').trim();
+  const p   = (document.getElementById('login-pwd')?.value      || '').trim();
   const btn = document.getElementById('login-btn');
   if (btn) btn.disabled = !(u && p);
+  console.log('[LOGIN BTN]', {
+    username: document.getElementById('login-username')?.value,
+    password: document.getElementById('login-pwd')?.value ? '***' : '',
+    disabled: document.getElementById('login-btn')?.disabled,
+  });
 }
 
 function renderLoginScreen() {
@@ -5184,6 +5189,39 @@ function buildActionReportHTML(t) {
   window.addEventListener('offline', updateOnlineStatus);
   updateOnlineStatus();
 })();
+</script>
+
+<!-- ══════════════════════════════════════════
+     LOGIN BUTTON ENABLE/DISABLE  (v13)
+     Runs after DOM is ready to guarantee
+     button state is always correct.
+══════════════════════════════════════════ -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const uEl  = document.getElementById('login-username');
+  const pEl  = document.getElementById('login-pwd');
+  const btn  = document.getElementById('login-btn');
+
+  // Wire all input events — covers typing, paste, autofill, mobile
+  ['input', 'change', 'keyup', 'paste'].forEach(function(evt) {
+    if (uEl) uEl.addEventListener(evt, updateLoginBtn);
+    if (pEl) pEl.addEventListener(evt, updateLoginBtn);
+  });
+
+  // Set correct initial state (handles browser autofill on page load)
+  updateLoginBtn();
+
+  // Extra safety: re-check after 500ms for autofill that fires late
+  setTimeout(updateLoginBtn, 500);
+
+  // Make button always clickable as fallback — doLogin() guards empty fields itself
+  if (btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      doLogin();
+    });
+  }
+});
 </script>
 </body>
 </html>
