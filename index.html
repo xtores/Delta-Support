@@ -1987,16 +1987,23 @@ function getSupervisorTeam() {
   };
 }
 
-// ── getSupervisorTickets: region-scoped ticket list for supervisor ──
-// Includes: tickets assigned to team members + unassigned tickets in region.
+// ── getSupervisorTickets: full visibility scope for supervisor ──
+// Includes tickets where ANY of these is true:
+//   • same region as supervisor
+//   • created by this supervisor
+//   • assigned to a technician under this supervisor
 function getSupervisorTickets(allTickets) {
   const team = getSupervisorTeam();
   if (!team) return allTickets;
   return allTickets.filter(t => {
-    if (t.region !== team.region) return false;           // must be in supervisor's region
-    const assigned = getAssignedArr(t);
-    if (!assigned.length) return true;                   // unassigned tickets in region are visible
-    return assigned.some(empNo => team.empNos.includes(String(empNo)));
+    // 1. Ticket is in supervisor's region
+    if (String(t.region||'').toLowerCase() === String(team.region||'').toLowerCase()) return true;
+    // 2. Ticket was created by this supervisor
+    if (String(t.createdBy) === String(team.myEmpNo)) return true;
+    // 3. Ticket is assigned to one of their technicians
+    const assigned = getAssignedArr(t).map(x => String(x));
+    if (assigned.some(id => team.empNos.includes(id))) return true;
+    return false;
   });
 }
 
@@ -4421,13 +4428,25 @@ function saveDetailReassign(id) {
   const t = tickets.find(x=>x.id===id); if (!t) return;
   const selected = [...document.querySelectorAll('#detail-tech-list input[type=checkbox]:checked')].map(cb=>cb.value);
   if (!selected.length) { showToast('Please select at least one technician'); return; }
+
+  // ── Regional Supervisor: validate selection is within their team ──
+  if (currentUser?.role === 'regional_supervisor') {
+    const team = getSupervisorTeam();
+    if (team) {
+      const invalid = selected.some(id => !team.empNos.includes(String(id)));
+      if (invalid) {
+        showToast('⛔ You can only assign technicians under your supervision');
+        return;
+      }
+    }
+  }
+
   t.assignedTo = selected;
   t.status = 'assigned';
   renderAll();
   const names = selected.map(e=>techDisplayName(e)).join(', ');
   showToast(`${id} assigned to ${names}`);
   openDetail(id);
-  // Persist to Supabase
   db.updateAssignment(id, selected);
 }
 
@@ -4518,6 +4537,17 @@ function openNewTicket() {
   if (currentUser?.role?.startsWith('requester')) { goPage('create-request'); return; }
   resetForm();
   document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+  // ── Supervisor: auto-set region and lock the dropdown ──
+  if (currentUser?.role === 'regional_supervisor' && currentUser.region) {
+    const regionEl = document.getElementById('f-region');
+    if (regionEl) {
+      regionEl.value    = currentUser.region;
+      regionEl.disabled = true;   // lock — supervisor cannot submit for another region
+    }
+  } else {
+    const regionEl = document.getElementById('f-region');
+    if (regionEl) regionEl.disabled = false;
+  }
   populateTechCheckboxes('f-tech-list');
   openModal('new-ticket-modal');
 }
@@ -4550,17 +4580,39 @@ function submitNewTicket() {
   if(!customer){ errEl.textContent='Customer name is required.'; errEl.style.display='block'; return; }
   if(!branch)  { errEl.textContent='Please select a team.';     errEl.style.display='block'; return; }
   errEl.style.display='none';
+
   const cfg  = ROLE_CONFIG[currentUser?.role]||{};
   const type = document.querySelector('#new-ticket-modal .type-btn.sel')?.dataset.type||'maintenance';
   const selectedTechs = cfg.canAssign ? getSelectedTechs('f-tech-list') : [];
 
+  // ── Regional Supervisor: validate selected techs are on their team ──
+  if (currentUser?.role === 'regional_supervisor' && selectedTechs.length > 0) {
+    const team = getSupervisorTeam();
+    if (team) {
+      const invalid = selectedTechs.some(id => !team.empNos.includes(String(id)));
+      if (invalid) {
+        errEl.textContent = 'You can only assign technicians under your supervision.';
+        errEl.style.display = 'block';
+        return;
+      }
+    }
+  }
+
   // ── STATUS WORKFLOW: new → assigned only when technicians are selected ──
   const status = selectedTechs.length ? 'assigned' : 'new';
+
+  // ── Supervisor: always stamp own region and employee number ──
+  const isSupervisor = currentUser?.role === 'regional_supervisor';
+  const ticketRegion = isSupervisor
+    ? (currentUser.region || document.getElementById('f-region').value)
+    : document.getElementById('f-region').value;
+  const ticketCreatedBy = String(currentUser.employeeNo || currentUser.employee_number || currentUser.id);
 
   const t = {
     id: nextIdLocal(), type, status,
     priority:      document.getElementById('f-priority').value,
-    customer, branch, region: document.getElementById('f-region').value,
+    customer, branch,
+    region:        ticketRegion,
     equipment:     document.getElementById('f-equipment').value.trim() || 'Equipment TBD',
     serial:        document.getElementById('f-serial')?.value.trim()   || '',
     contactPerson: document.getElementById('f-contact')?.value.trim()  || '',
@@ -4568,8 +4620,10 @@ function submitNewTicket() {
     description:   document.getElementById('f-description').value.trim(),
     assignedTo:    selectedTechs,
     date:          document.getElementById('f-date').value || new Date().toISOString().split('T')[0],
-    createdBy:     currentUser.id, createdAt: Date.now(),
+    createdBy:     ticketCreatedBy,
+    createdAt:     Date.now(),
   };
+
   tickets.unshift(t);
   closeModal('new-ticket-modal');
   resetForm();
@@ -4582,7 +4636,10 @@ function submitNewTicket() {
   db.nextId().then(realId => {
     const idx = tickets.findIndex(x=>x.id===t.id);
     if(idx>=0 && realId){ tickets[idx].id=realId; t.id=realId; }
-    db.save(t);
+    db.save(t).then(() => {
+      // Refresh from DB so dashboard reflects the new ticket immediately
+      loadFromSupabase();
+    });
   });
 }
 
