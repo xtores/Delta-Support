@@ -1730,7 +1730,6 @@ const technicianAccounts = [
   { employeeNo:'6888', name:'Joan B. Pajarito',title:'Technician',        color:'#0284c7', password:'6888', region:'west' },
   { employeeNo:'6889', name:'Al Jhon V Torres',title:'Technician',        color:'#7c2d12', password:'6889', region:'west' },
 ];
-const nonTechUsers = [
 // ── Management / non-technician seed accounts ──
 // employee_number is an integer — used as the primary identifier.
 // Passwords default to 'demo'; Admin should change these in production.
@@ -2109,6 +2108,32 @@ async function doLogin() {
 }
 
 // ── DEV BYPASS — remove before production ──────────────────────────────────
+function devBypassLogin() {
+  const mockRaw = {
+    employee_number: 1000,
+    username:  'manager1',
+    full_name: 'Technical Manager',
+    role:      'Technical Manager',
+    region:    'east',
+    is_active: true,
+    color:     '#d97706'
+  };
+  currentUser = typeof dbUserToCurrentUser === 'function'
+    ? dbUserToCurrentUser(mockRaw)
+    : {
+        employeeNo: '1000', employee_number: 1000, id: '1000',
+        username: 'manager1', name: 'Technical Manager',
+        full_name: 'Technical Manager', role: 'Technical Manager',
+        region: 'east', color: '#d97706', avatar: 'TM', roleLabel: 'Technical Manager'
+      };
+  window.currentUser = currentUser;
+  localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: 1000 }));
+  localStorage.setItem('currentUser', JSON.stringify(mockRaw));
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app-shell').classList.add('visible');
+  document.body.classList.add('app-active');
+  bootApp();
+}
 // ── END DEV BYPASS ──────────────────────────────────────────────────────────
 
 function doLogout() {
@@ -4463,45 +4488,11 @@ async function loadFromSupabase() {
 }
 
 // ══════════════════════════════
-//   DEV AUTO ENTER  (bypasses login — remove for production)
+//   INIT
 // ══════════════════════════════
-function devAutoEnter() {
-  const mockRaw = {
-    employee_number: 1000,
-    username:  'manager1',
-    full_name: 'Technical Manager',
-    role:      'Technical Manager',
-    region:    'east',
-    is_active: true,
-    color:     '#d97706'
-  };
-  currentUser = typeof dbUserToCurrentUser === 'function'
-    ? dbUserToCurrentUser(mockRaw)
-    : {
-        employeeNo: '1000', employee_number: 1000, id: '1000',
-        username: 'manager1', name: 'Technical Manager',
-        full_name: 'Technical Manager', role: 'Technical Manager',
-        region: 'east', color: '#d97706', avatar: 'TM', roleLabel: 'Technical Manager'
-      };
-  window.currentUser = currentUser;
-  try {
-    localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: 1000 }));
-    localStorage.setItem('currentUser', JSON.stringify(mockRaw));
-  } catch(e) { console.warn('[DEV AUTO ENTER] storage failed', e); }
-  if (!Array.isArray(allUsers)) allUsers = [];
-  if (!allUsers.find(u => u.employee_number === 1000)) allUsers.push(mockRaw);
-  const login = document.getElementById('login-screen');
-  const app   = document.getElementById('app-shell');
-  if (login) login.classList.add('hidden');
-  if (app)   app.classList.add('visible');
-  document.body.classList.add('app-active');
-  console.log('[DEV AUTO ENTER] currentUser =', currentUser);
-  bootApp();
-}
-
 window.addEventListener('DOMContentLoaded', () => {
   try {
-    devAutoEnter();
+    devBypassLogin();
   } catch(e) {
     console.error('[INIT ERROR]', e);
     const err = document.getElementById('login-error');
