@@ -4493,66 +4493,39 @@ async function loadFromSupabase() {
 // ══════════════════════════════
 //   INIT
 // ══════════════════════════════
-(async function init() {
-  // ── Show login screen immediately — do NOT block on loadUsersFromDB ──
-  // The login form uses a direct Supabase query, so it works without allUsers.
-  document.getElementById('login-screen').style.display = 'block';
-
-  // ── Try to restore a previous session ──
+function forceDevSession() {
+  const mockRaw = {
+    employee_number: 1000,
+    username:   'manager1',
+    full_name:  'Technical Manager',
+    role:       'Technical Manager',
+    region:     'east',
+    is_active:  true,
+    color:      '#d97706'
+  };
+  currentUser = typeof dbUserToCurrentUser === 'function'
+    ? dbUserToCurrentUser(mockRaw)
+    : { employeeNo:'1000', name:'Technical Manager', role:'technical_manager', region:'east', color:'#d97706', avatar:'TM', roleLabel:'Technical Manager', id:'1000' };
+  window.currentUser = currentUser;
   try {
-    const sess = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-    const empNum = sess?.employeeNumber ?? (sess?.userId ? parseInt(sess.userId, 10) || null : null);
+    localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: 1000 }));
+    localStorage.setItem('currentUser', JSON.stringify(mockRaw));
+  } catch(e) { console.warn('Session storage failed:', e); }
+  if (!Array.isArray(allUsers)) allUsers = [];
+  if (!allUsers.find(u => u.employee_number === 1000)) allUsers.push(mockRaw);
+  const login = document.getElementById('login-screen');
+  const app   = document.getElementById('app-shell');
+  if (login) login.classList.add('hidden');
+  if (app)   app.classList.add('visible');
+  document.body.classList.add('app-active');
+  console.log('[DEV AUTO BYPASS] currentUser =', currentUser);
+  if (typeof bootApp === 'function') bootApp();
+  else console.error('bootApp is missing');
+}
 
-    if (empNum && supabaseClient) {
-      // Query Supabase directly for the session user — no allUsers needed
-      const { data: sessionRows, error } = await supabaseClient
-        .from('users')
-        .select('*')
-        .eq('employee_number', empNum)
-        .limit(1);
-
-      const sessionUser = (!error && sessionRows && sessionRows.length > 0) ? sessionRows[0] : null;
-
-      if (sessionUser && sessionUser.is_active !== false) {
-        currentUser = dbUserToCurrentUser(sessionUser);
-        // Seed into allUsers cache
-        allUsers = [sessionUser];
-        console.log('[Auth] session restored', currentUser.name, '|', currentUser.role, '| empNo:', currentUser.employeeNo);
-        document.getElementById('login-screen').classList.add('hidden');
-        document.getElementById('app-shell').classList.add('visible');
-        document.body.classList.add('app-active');
-        // Load the full user list in the background for admin/assignment panels
-        loadUsersFromDB().catch(e => console.warn('[Auth] background user load failed:', e.message));
-        bootApp();
-        return;
-      }
-      // Session invalid — clear it
-      localStorage.removeItem(SESSION_KEY);
-    } else if (empNum) {
-      // No Supabase — try in-memory fallback
-      await loadUsersFromDB().catch(() => {});
-      const found = allUsers.find(u => u.employee_number === empNum);
-      if (found && found.is_active !== false) {
-        currentUser = dbUserToCurrentUser(found);
-        console.log('[Auth] session restored (offline)', currentUser.name);
-        document.getElementById('login-screen').classList.add('hidden');
-        document.getElementById('app-shell').classList.add('visible');
-        document.body.classList.add('app-active');
-        bootApp();
-        return;
-      }
-      localStorage.removeItem(SESSION_KEY);
-    }
-  } catch(e) {
-    console.warn('[Auth] session restore error:', e.message);
-  }
-
-  // ── No valid session — show login and load users in the background ──
-  document.getElementById('login-username')?.focus();
-  // Load users in background so allUsers is ready for the admin panel
-  // and as a fallback if Supabase is slow during doLogin
-  loadUsersFromDB().catch(e => console.warn('[Auth] background user load failed:', e.message));
-})();
+window.addEventListener('load', () => {
+  forceDevSession();
+});
 </script>
 
 <!-- ══════════════════════════════════════════════════
