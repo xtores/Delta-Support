@@ -1726,36 +1726,32 @@ const technicianAccounts = [
   { employeeNo:'6889', name:'Al Jhon V Torres',title:'Technician',        color:'#7c2d12', password:'6889', region:'west' },
 ];
 const nonTechUsers = [
-// ── Management / non-technician seed accounts ──
-// employee_number is an integer — used as the primary identifier.
-// Passwords default to 'demo'; Admin should change these in production.
-const nonTechUsers = [
-  { employee_number: 1001, username:'requester1',  name:'Ahmed Consumer',   role:'requester_consumer',   color:'#1d4ed8' },
-  { employee_number: 1002, username:'requester2',  name:'Sara Commercial',  role:'requester_commercial', color:'#4338ca' },
-  { employee_number: 1003, username:'techmanager', name:'Naveed Al-Rashid', role:'technical_manager',    color:'#d97706' },
-  { employee_number: 1000, username:'admin',       name:'Admin User',       role:'admin',                color:'#dc2626' },
+  { id:'u1', name:'Ahmed Consumer',  email:'requester.consumer@demo.com',   role:'requester_consumer',   avatar:'AC', color:'#1d4ed8', roleLabel:'Requester — Consumer Sales' },
+  { id:'u2', name:'Sara Commercial', email:'requester.commercial@demo.com', role:'requester_commercial', avatar:'SC', color:'#4338ca', roleLabel:'Requester — Commercial Sales' },
+  { id:'u3', name:'Naveed Manager',  email:'techmanager@demo.com',          role:'technical_manager',    avatar:'NM', color:'#d97706', roleLabel:'Technical Manager' },
+  { id:'u5', name:'Admin User',      email:'admin@demo.com',                role:'admin',                avatar:'AD', color:'#dc2626', roleLabel:'System Administrator' },
 ];
 
 // ══════════════════════════════════════════════════════════════
-//   USERS TABLE INTEGRATION  (v9)
+//   USERS TABLE INTEGRATION  (v8)
 //
 //   Supabase table: users
 //   CREATE TABLE IF NOT EXISTS users (
-//     employee_number  integer primary key,      -- THE main identifier
-//     full_name        text    not null,
-//     username         text    unique not null,
-//     password         text    not null,
-//     role             text    not null default 'technician',
-//     region           text,
-//     supervisor_id    integer null references users(employee_number),
-//     manager_id       integer null references users(employee_number),
-//     is_active        boolean default true,
-//     color            text    default '#005AA9',
-//     created_at       timestamptz default now(),
-//     updated_at       timestamptz default now()
+//     id          text primary key,
+//     full_name   text not null,
+//     employee_number text unique,
+//     username    text unique not null,
+//     password    text not null,
+//     role        text not null default 'technician',
+//     region      text,
+//     supervisor_id text,
+//     manager_id  text,
+//     is_active   boolean default true,
+//     color       text default '#005AA9',
+//     created_at  timestamptz default now(),
+//     updated_at  timestamptz default now()
 //   );
-//   -- RLS: allow anon all
-//   ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+//   -- RLS: allow anon SELECT/INSERT/UPDATE (for now)
 //   CREATE POLICY "anon_all" ON users FOR ALL TO anon USING (true) WITH CHECK (true);
 // ══════════════════════════════════════════════════════════════
 const USERS_TABLE = 'users';
@@ -1783,13 +1779,13 @@ async function loadUsersFromDB() {
   }
 }
 
-// ── Seed built-in accounts into users table (uses employee_number as PK) ──
+// ── Seed built-in accounts into users table ──
 async function seedBuiltInUsers() {
   const seed = buildFallbackUsers();
   try {
     const { error } = await supabaseClient
       .from(USERS_TABLE)
-      .upsert(seed, { onConflict: 'employee_number' });
+      .upsert(seed, { onConflict: 'id' });
     if (error) console.warn('[Auth] Seed upsert error:', error.message);
     else {
       allUsers = seed;
@@ -1801,61 +1797,60 @@ async function seedBuiltInUsers() {
   }
 }
 
-// ── Build fallback user list — employee_number is the integer primary key ──
+// ── Build fallback user list from legacy technicianAccounts + nonTechUsers ──
 function buildFallbackUsers() {
-  const now = new Date().toISOString();
-
-  // Management users — integer employee_numbers defined in nonTechUsers
+  const mgmtMap = {
+    u1: { role:'requester_consumer',   region:null },
+    u2: { role:'requester_commercial', region:null },
+    u3: { role:'technical_manager',    region:null },
+    u5: { role:'admin',                region:null },
+  };
   const mgmt = nonTechUsers.map(u => ({
-    employee_number: u.employee_number,          // integer PK
+    id:              u.id,
     full_name:       u.name,
-    username:        u.username,
+    employee_number: u.id,
+    username:        u.email.split('@')[0],
     password:        'demo',
-    role:            u.role,
-    region:          null,
+    role:            mgmtMap[u.id]?.role || u.role,
+    region:          mgmtMap[u.id]?.region || null,
     supervisor_id:   null,
     manager_id:      null,
     is_active:       true,
     color:           u.color,
-    created_at:      now,
-    updated_at:      now,
+    created_at:      new Date().toISOString(),
+    updated_at:      new Date().toISOString(),
   }));
-
-  // Field technicians — employeeNo string → integer
   const techs = technicianAccounts.map(t => ({
-    employee_number: parseInt(t.employeeNo, 10),  // integer PK
+    id:              't_' + t.employeeNo,
     full_name:       t.name,
+    employee_number: t.employeeNo,
     username:        t.employeeNo,
     password:        t.password || t.employeeNo,
     role:            'technician',
     region:          t.region || 'east',
     supervisor_id:   null,
-    manager_id:      1003,                        // tech manager emp number
+    manager_id:      null,
     is_active:       true,
     color:           t.color,
-    created_at:      now,
-    updated_at:      now,
+    created_at:      new Date().toISOString(),
+    updated_at:      new Date().toISOString(),
   }));
-
   return [...mgmt, ...techs];
 }
 
 // ── Map a DB user row to the internal currentUser shape ──
-// employee_number is the integer PK; app stores it as string for compatibility.
 function dbUserToCurrentUser(u) {
-  const role  = u.role || 'technician';
-  const cfg   = ROLE_CONFIG[role] || ROLE_CONFIG.technician;
-  const empNo = String(u.employee_number);   // string for internal app use
+  const role = u.role || 'technician';
+  const cfg  = ROLE_CONFIG[role] || ROLE_CONFIG.technician;
   return {
-    id:          empNo,                      // app-internal id = employee_number as string
-    employeeNo:  empNo,
+    id:          u.id,
     name:        u.full_name,
-    username:    u.username,
+    employeeNo:  u.employee_number || u.id,
     email:       `${u.username}@delta-tech.com`,
     role,
     region:      u.region || null,
-    supervisorId: u.supervisor_id ? String(u.supervisor_id) : null,
-    managerId:    u.manager_id   ? String(u.manager_id)    : null,
+    supervisorId: u.supervisor_id || null,
+    managerId:   u.manager_id    || null,
     avatar:      initials(u.full_name),
     color:       u.color || cfg.color || '#005AA9',
     roleLabel:   cfg.label || role,
@@ -1864,23 +1859,15 @@ function dbUserToCurrentUser(u) {
   };
 }
 
-// Password lookup keyed by integer employee_number
-const NON_TECH_PASSWORDS = {
-  1000: 'demo',   // admin
-  1001: 'demo',   // requester consumer
-  1002: 'demo',   // requester commercial
-  1003: 'demo',   // technical manager
-};
+// Non-tech demo users (legacy fallback)
+const NON_TECH_PASSWORDS = { u1:'demo', u2:'demo', u3:'demo', u5:'demo' };
 
 // ── LEGACY ARRAYS kept for seed fallback & ticket assignee lookups ──
-// getTechByEmpNo: looks up by employee_number (accepts int or string)
 function getTechByEmpNo(empNo) {
-  const empInt = parseInt(empNo, 10);
-  // Search live allUsers first
-  const u = allUsers.find(u => u.employee_number === empInt && u.role === 'technician');
-  if (u) return { employeeNo: String(u.employee_number), name: u.full_name, color: u.color || '#6b7280', title: u.title || 'Technician', region: u.region || null };
-  // Fall back to static seed array
-  return technicianAccounts.find(t => t.employeeNo === String(empNo)) || null;
+  // First check live allUsers; fall back to technicianAccounts
+  const u = allUsers.find(u => u.employee_number === String(empNo) && u.role === 'technician');
+  if (u) return { employeeNo: u.employee_number, name: u.full_name, color: u.color || '#6b7280', title: u.title || 'Technician' };
+  return technicianAccounts.find(t => t.employeeNo === String(empNo));
 }
 function getTechByName(name) {
   const u = allUsers.find(u => u.full_name === name && u.role === 'technician');
@@ -1958,7 +1945,7 @@ async function doLogin() {
   const errEl      = document.getElementById('login-error');
   const btn        = document.getElementById('login-btn');
 
-  const identifier = (usernameEl?.value || '').trim();
+  const identifier = (usernameEl?.value || '').trim().toLowerCase();
   const password   = (pwdEl?.value || '').trim();
   if (!identifier || !password) return;
 
@@ -1966,64 +1953,17 @@ async function doLogin() {
   btn.textContent = 'Logging in…';
   errEl.style.display = 'none';
 
-  // ── Direct Supabase query — no dependency on allUsers or loadUsersFromDB ──
-  // Matches by username (text) OR employee_number (cast to text for .or())
-  let found = null;
-  let queryError = null;
+  // ── Load users if not yet loaded ──
+  if (allUsers.length === 0) await loadUsersFromDB();
 
-  if (supabaseClient) {
-    try {
-      // Try username match first
-      const byUsername = await supabaseClient
-        .from('users')
-        .select('*')
-        .eq('username', identifier.toLowerCase())
-        .limit(1)
-        .maybeSingle();
+  // ── Find user by username OR employee_number (case-insensitive) ──
+  const found = allUsers.find(u =>
+    (u.username?.toLowerCase() === identifier ||
+     u.employee_number?.toLowerCase() === identifier)
+  );
 
-      if (byUsername.data) {
-        found = byUsername.data;
-      } else {
-        // Try employee_number match (numeric)
-        const empNum = parseInt(identifier, 10);
-        if (!isNaN(empNum)) {
-          const byEmp = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('employee_number', empNum)
-            .limit(1)
-            .maybeSingle();
-          if (byEmp.data) found = byEmp.data;
-          if (byEmp.error) queryError = byEmp.error;
-        }
-        if (byUsername.error) queryError = byUsername.error;
-      }
-    } catch(e) {
-      queryError = e;
-    }
-  }
-
-  // ── Fallback to in-memory allUsers if Supabase unreachable ──
-  if (!found && !supabaseClient) {
-    found = allUsers.find(u =>
-      u.username?.toLowerCase() === identifier.toLowerCase() ||
-      String(u.employee_number) === identifier
-    ) || null;
-  }
-  if (!found && queryError) {
-    // Supabase returned an error — try in-memory fallback
-    console.warn('[Login] Supabase query failed, trying in-memory:', queryError.message || queryError);
-    found = allUsers.find(u =>
-      u.username?.toLowerCase() === identifier.toLowerCase() ||
-      String(u.employee_number) === identifier
-    ) || null;
-  }
-
-  console.log('[Login] User found:', found ? { username: found.username, employee_number: found.employee_number, role: found.role } : null);
-
-  // ── Validate ──
   if (!found) {
-    console.log('[Login] failure — not found:', identifier);
+    console.log('[Auth] login failure — user not found:', identifier);
     errEl.textContent = '⛔ Username or employee number not found.';
     errEl.style.display = 'block';
     btn.disabled = false;
@@ -2031,7 +1971,7 @@ async function doLogin() {
     return;
   }
   if (found.is_active === false) {
-    console.log('[Login] failure — account disabled:', identifier);
+    console.log('[Auth] login failure — account disabled:', identifier);
     errEl.textContent = '⛔ This account has been disabled. Contact your administrator.';
     errEl.style.display = 'block';
     btn.disabled = false;
@@ -2039,7 +1979,7 @@ async function doLogin() {
     return;
   }
   if (found.password !== password) {
-    console.log('[Login] failure — wrong password for:', identifier);
+    console.log('[Auth] login failure — wrong password:', identifier);
     errEl.textContent = '⛔ Incorrect password. Please try again.';
     errEl.style.display = 'block';
     pwdEl.value = '';
@@ -2051,15 +1991,9 @@ async function doLogin() {
 
   // ── Success ──
   currentUser = dbUserToCurrentUser(found);
-  console.log('[Login] success —', currentUser.name, '| role:', currentUser.role, '| empNo:', currentUser.employeeNo, '| region:', currentUser.region || 'all');
+  console.log('[Auth] login success', currentUser.name, '|', currentUser.role, '| region:', currentUser.region || 'all');
 
-  // Merge into allUsers cache so rest of app sees this user
-  if (!allUsers.find(u => u.employee_number === found.employee_number)) {
-    allUsers.push(found);
-  }
-
-  // Store employee_number in session (integer PK)
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ employeeNumber: found.employee_number }));
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: found.id }));
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app-shell').classList.add('visible');
   document.body.classList.add('app-active');
@@ -2252,14 +2186,14 @@ function saveTickets(arr) {
 }
 // ── SEED TICKETS (used only if DB is offline and cache is empty) ──
 const SEED_TICKETS = [
-  { id:'TKT-0047', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Sarah Al-Rashid', branch:'Operation Team',  region:'east',    equipment:'Treadmill — Life Fitness T5',      description:'Belt worn causing slippage.',        assignedTo:['5304'],              date:'2026-04-15', createdBy:'1003', createdAt:Date.now()-3600000 },
-  { id:'TKT-0046', type:'installation', status:'assigned',    priority:'normal', customer:'Khalid Ibrahim',  branch:'Consumer Team',   region:'central', equipment:'Squat Rack × 4 — Hammer Strength', description:'New equipment installation.',        assignedTo:['5304','3152','6597'], date:'2026-04-16', createdBy:'1001', createdAt:Date.now()-7200000 },
-  { id:'TKT-0045', type:'spare-parts',  status:'on-hold',     priority:'urgent', customer:'Fatima Hassan',   branch:'Operation Team',  region:'east',    equipment:'Elliptical — Precor EFX 885',      description:'Console board failure.',            assignedTo:['3152'],              date:'2026-04-14', createdBy:'1002', createdAt:Date.now()-86400000 },
-  { id:'TKT-0044', type:'amc',          status:'new',         priority:'normal', customer:'Omar Al-Sayed',   branch:'Sales Team',      region:'west',    equipment:'Full Gym — AMC Renewal',           description:'Annual contract renewal.',          assignedTo:['6635'],              date:'2026-04-18', createdBy:'1003', createdAt:Date.now()-172800000 },
-  { id:'TKT-0043', type:'maintenance',  status:'completed',   priority:'normal', customer:'Nora Abdullah',   branch:'Consumer Team',   region:'central', equipment:'Cable Machine — Cybex VR3',        description:'Quarterly PM service completed.',   assignedTo:['6597'],              date:'2026-04-12', createdBy:'1001', createdAt:Date.now()-259200000 },
-  { id:'TKT-0041', type:'installation', status:'on-hold',     priority:'urgent', customer:'Ahmed Fouad',     branch:'Operation Team',  region:'east',    equipment:'Treadmill Bank × 8 — NordicTrack', description:'SLA breached — awaiting site prep.',assignedTo:['5304','6632','6639'], date:'2026-04-10', createdBy:'1003', createdAt:Date.now()-345600000 },
-  { id:'TKT-0039', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Layla Mustafa',   branch:'Consumer Team',   region:'east',    equipment:'Rowing Machines × 6 — Concept2',  description:'Bearing replacement needed.',       assignedTo:['6887','6888'],       date:'2026-04-15', createdBy:'1002', createdAt:Date.now()-432000000 },
-  { id:'TKT-0036', type:'amc',          status:'completed',   priority:'normal', customer:'Hassan Khalil',   branch:'Sales Team',      region:'east',    equipment:'Cardio Zone — Full AMC',           description:'AMC activation completed.',         assignedTo:['6889'],              date:'2026-04-08', createdBy:'1001', createdAt:Date.now()-518400000 },
+  { id:'TKT-0047', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Sarah Al-Rashid', branch:'Operation Team',  region:'east',    equipment:'Treadmill — Life Fitness T5',      description:'Belt worn causing slippage.',        assignedTo:['5304'],              date:'2026-04-15', createdBy:'u3', createdAt:Date.now()-3600000 },
+  { id:'TKT-0046', type:'installation', status:'assigned',    priority:'normal', customer:'Khalid Ibrahim',  branch:'Consumer Team',   region:'central', equipment:'Squat Rack × 4 — Hammer Strength', description:'New equipment installation.',        assignedTo:['5304','3152','6597'], date:'2026-04-16', createdBy:'u1', createdAt:Date.now()-7200000 },
+  { id:'TKT-0045', type:'spare-parts',  status:'on-hold',     priority:'urgent', customer:'Fatima Hassan',   branch:'Operation Team',  region:'east',    equipment:'Elliptical — Precor EFX 885',      description:'Console board failure.',            assignedTo:['3152'],              date:'2026-04-14', createdBy:'u2', createdAt:Date.now()-86400000 },
+  { id:'TKT-0044', type:'amc',          status:'new',         priority:'normal', customer:'Omar Al-Sayed',   branch:'Sales Team',      region:'west',    equipment:'Full Gym — AMC Renewal',           description:'Annual contract renewal.',          assignedTo:['6635'],              date:'2026-04-18', createdBy:'u3', createdAt:Date.now()-172800000 },
+  { id:'TKT-0043', type:'maintenance',  status:'completed',   priority:'normal', customer:'Nora Abdullah',   branch:'Consumer Team',   region:'central', equipment:'Cable Machine — Cybex VR3',        description:'Quarterly PM service completed.',   assignedTo:['6597'],              date:'2026-04-12', createdBy:'u1', createdAt:Date.now()-259200000 },
+  { id:'TKT-0041', type:'installation', status:'on-hold',     priority:'urgent', customer:'Ahmed Fouad',     branch:'Operation Team',  region:'east',    equipment:'Treadmill Bank × 8 — NordicTrack', description:'SLA breached — awaiting site prep.',assignedTo:['5304','6632','6639'], date:'2026-04-10', createdBy:'u3', createdAt:Date.now()-345600000 },
+  { id:'TKT-0039', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Layla Mustafa',   branch:'Consumer Team',   region:'east',    equipment:'Rowing Machines × 6 — Concept2',  description:'Bearing replacement needed.',       assignedTo:['6887','6888'],       date:'2026-04-15', createdBy:'u2', createdAt:Date.now()-432000000 },
+  { id:'TKT-0036', type:'amc',          status:'completed',   priority:'normal', customer:'Hassan Khalil',   branch:'Sales Team',      region:'east',    equipment:'Cardio Zone — Full AMC',           description:'AMC activation completed.',         assignedTo:['6889'],              date:'2026-04-08', createdBy:'u1', createdAt:Date.now()-518400000 },
 ];
 
 // ── APP STATE ──
@@ -3839,8 +3773,8 @@ function renderAdmin() {
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
         <div style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;${roleStyle}">${roleLabels[u.role]||u.role}</div>
         <div style="display:flex;gap:4px;">
-          <button class="btn btn-outline btn-xs" onclick="openEditUser(${u.employee_number})" title="Edit user">✏️</button>
-          <button class="btn btn-xs" style="${inactive ? 'background:var(--ok);color:#fff;' : 'background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);'}" onclick="toggleUserActive(${u.employee_number},${!inactive})" title="${inactive ? 'Enable' : 'Disable'}">${inactive ? '✓ Enable' : '⏸ Disable'}</button>
+          <button class="btn btn-outline btn-xs" onclick="openEditUser('${u.id}')" title="Edit user">✏️</button>
+          <button class="btn btn-xs" style="${inactive ? 'background:var(--ok);color:#fff;' : 'background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);'}" onclick="toggleUserActive('${u.id}',${!inactive})" title="${inactive ? 'Enable' : 'Disable'}">${inactive ? '✓ Enable' : '⏸ Disable'}</button>
         </div>
       </div>
     </div>`;
@@ -3848,84 +3782,57 @@ function renderAdmin() {
 }
 
 // ── Toggle user active/inactive ──
-async function toggleUserActive(empNum, makeActive) {
-  empNum = parseInt(empNum, 10);
-  const u = allUsers.find(x => x.employee_number === empNum);
+async function toggleUserActive(userId, makeActive) {
+  const u = allUsers.find(x => x.id === userId);
   if (!u) return;
   u.is_active = makeActive;
   u.updated_at = new Date().toISOString();
-  console.log('[Users] toggle active:', u.username, empNum, '→', makeActive);
+  console.log('[Admin] toggle user active:', u.username, '→', makeActive);
+  // Persist to Supabase
   if (supabaseClient) {
     const { error } = await supabaseClient
       .from(USERS_TABLE)
       .update({ is_active: makeActive, updated_at: u.updated_at })
-      .eq('employee_number', empNum);
-    if (error) console.error('[Users] toggleUserActive error:', error.message);
+      .eq('id', userId);
+    if (error) console.error('[Admin] toggleUserActive error:', error.message);
   }
   renderAdmin();
   showToast(makeActive ? `✅ ${u.full_name} enabled` : `⏸ ${u.full_name} disabled`);
 }
 
-// ── Helper: populate supervisor/manager dropdown for the modal ──
-function populateReportingDropdowns(currentEmpNum) {
-  // Supervisor dropdown: supervisors and technical managers
-  const supervisorEl = document.getElementById('um-supervisor');
-  const managerEl    = document.getElementById('um-manager');
-  if (!supervisorEl || !managerEl) return;
-
-  const supervisors = allUsers.filter(u =>
-    ['regional_supervisor','technical_manager'].includes(u.role) && u.is_active !== false
-  );
-  const managers = allUsers.filter(u =>
-    u.role === 'technical_manager' && u.is_active !== false
-  );
-
-  const blankOpt = '<option value="">— None —</option>';
-  supervisorEl.innerHTML = blankOpt + supervisors.map(u =>
-    `<option value="${u.employee_number}">${u.full_name} · ${u.employee_number}</option>`
-  ).join('');
-  managerEl.innerHTML = blankOpt + managers.map(u =>
-    `<option value="${u.employee_number}">${u.full_name} · ${u.employee_number}</option>`
-  ).join('');
-}
-
 // ── Open create-user modal ──
 function openCreateUser() {
+  // Reset form
   ['um-fullname','um-empno','um-username','um-password'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
-  document.getElementById('um-role').value    = 'technician';
-  document.getElementById('um-region').value  = '';
-  document.getElementById('um-color').value   = '#005AA9';
+  const roleEl = document.getElementById('um-role');
+  const regionEl = document.getElementById('um-region');
+  const colorEl = document.getElementById('um-color');
+  if (roleEl) roleEl.value = 'technician';
+  if (regionEl) regionEl.value = '';
+  if (colorEl) colorEl.value = '#005AA9';
   document.getElementById('um-modal-title').textContent = 'Create User';
-  document.getElementById('um-emp-id').value  = '';   // hidden: stores employee_number for edit
+  document.getElementById('um-user-id').value = '';
   document.getElementById('um-error').style.display = 'none';
-  populateReportingDropdowns(null);
   toggleRegionField();
   openModal('user-mgmt-modal');
 }
 
 // ── Open edit-user modal ──
-function openEditUser(empNum) {
-  empNum = parseInt(empNum, 10);
-  const u = allUsers.find(x => x.employee_number === empNum);
-  if (!u) { showToast('User not found'); return; }
+function openEditUser(userId) {
+  const u = allUsers.find(x => x.id === userId);
+  if (!u) return;
   document.getElementById('um-modal-title').textContent = 'Edit User';
-  document.getElementById('um-emp-id').value    = empNum;             // integer employee_number
-  document.getElementById('um-fullname').value  = u.full_name  || '';
+  document.getElementById('um-user-id').value = u.id;
+  document.getElementById('um-fullname').value  = u.full_name || '';
   document.getElementById('um-empno').value     = u.employee_number || '';
-  document.getElementById('um-username').value  = u.username   || '';
-  document.getElementById('um-password').value  = '';                 // never pre-fill
-  document.getElementById('um-role').value      = u.role       || 'technician';
-  document.getElementById('um-region').value    = u.region     || '';
-  document.getElementById('um-color').value     = u.color      || '#005AA9';
+  document.getElementById('um-username').value  = u.username || '';
+  document.getElementById('um-password').value  = ''; // don't pre-fill password
+  document.getElementById('um-role').value      = u.role || 'technician';
+  document.getElementById('um-region').value    = u.region || '';
+  document.getElementById('um-color').value     = u.color || '#005AA9';
   document.getElementById('um-error').style.display = 'none';
-  populateReportingDropdowns(empNum);
-  // Set supervisor / manager selects after options are populated
-  const supEl = document.getElementById('um-supervisor');
-  const mgrEl = document.getElementById('um-manager');
-  if (supEl) supEl.value = u.supervisor_id != null ? String(u.supervisor_id) : '';
-  if (mgrEl) mgrEl.value = u.manager_id    != null ? String(u.manager_id)    : '';
   toggleRegionField();
   openModal('user-mgmt-modal');
 }
@@ -3935,94 +3842,79 @@ function toggleRegionField() {
   const role = document.getElementById('um-role')?.value;
   const regionRow = document.getElementById('um-region-row');
   if (regionRow) {
-    regionRow.style.display = ['technician','regional_supervisor'].includes(role) ? 'block' : 'none';
+    const needsRegion = ['technician','regional_supervisor'].includes(role);
+    regionRow.style.display = needsRegion ? 'block' : 'none';
   }
 }
 
-// ── Save user (create or update) — employee_number is the integer PK ──
+// ── Save user (create or update) ──
 async function saveUserForm() {
-  const empIdInput  = document.getElementById('um-emp-id').value.trim();   // integer as string, or ''
-  const fullName    = document.getElementById('um-fullname').value.trim();
-  const empNoRaw    = document.getElementById('um-empno').value.trim();
-  const username    = document.getElementById('um-username').value.trim().toLowerCase();
-  const password    = document.getElementById('um-password').value.trim();
-  const role        = document.getElementById('um-role').value;
-  const region      = document.getElementById('um-region').value || null;
-  const color       = document.getElementById('um-color').value || '#005AA9';
-  const supervisorRaw = document.getElementById('um-supervisor')?.value || '';
-  const managerRaw    = document.getElementById('um-manager')?.value    || '';
-  const errEl       = document.getElementById('um-error');
-  const saveBtn     = document.getElementById('um-save-btn');
+  const idInput   = document.getElementById('um-user-id').value.trim();
+  const fullName  = document.getElementById('um-fullname').value.trim();
+  const empNo     = document.getElementById('um-empno').value.trim();
+  const username  = document.getElementById('um-username').value.trim().toLowerCase();
+  const password  = document.getElementById('um-password').value.trim();
+  const role      = document.getElementById('um-role').value;
+  const region    = document.getElementById('um-region').value || null;
+  const color     = document.getElementById('um-color').value || '#005AA9';
+  const errEl     = document.getElementById('um-error');
+  const saveBtn   = document.getElementById('um-save-btn');
 
   // ── Validation ──
-  if (!fullName)  { errEl.textContent='Full name is required.';  errEl.style.display='block'; return; }
-  if (!username)  { errEl.textContent='Username is required.';   errEl.style.display='block'; return; }
-  if (!empNoRaw)  { errEl.textContent='Employee number is required.'; errEl.style.display='block'; return; }
-  const empNoInt = parseInt(empNoRaw, 10);
-  if (isNaN(empNoInt) || empNoInt <= 0) {
-    errEl.textContent = 'Employee number must be a positive integer.';
-    errEl.style.display = 'block'; return;
-  }
-  if (!empIdInput && !password) {
-    errEl.textContent='Password is required for new users.'; errEl.style.display='block'; return;
-  }
+  if (!fullName) { errEl.textContent='Full name is required.'; errEl.style.display='block'; return; }
+  if (!username) { errEl.textContent='Username is required.'; errEl.style.display='block'; return; }
+  if (!idInput && !password) { errEl.textContent='Password is required for new users.'; errEl.style.display='block'; return; }
   if (['technician','regional_supervisor'].includes(role) && !region) {
     errEl.textContent='Region is required for this role.'; errEl.style.display='block'; return;
   }
   errEl.style.display = 'none';
-  saveBtn.disabled    = true;
+  saveBtn.disabled = true;
   saveBtn.textContent = 'Saving…';
 
-  const isEdit       = !!empIdInput;
-  const originalEmpNum = isEdit ? parseInt(empIdInput, 10) : null;
-  const now          = new Date().toISOString();
+  const isEdit = !!idInput;
+  const userId = isEdit ? idInput : ('usr_' + Date.now());
+  const now    = new Date().toISOString();
 
-  // ── Build payload — all IDs are integers ──
   const payload = {
-    employee_number: empNoInt,                                      // integer PK
+    id:              userId,
     full_name:       fullName,
+    employee_number: empNo || null,
     username,
     role,
-    region:          region || null,
-    supervisor_id:   supervisorRaw ? parseInt(supervisorRaw, 10) : null,  // integer
-    manager_id:      managerRaw    ? parseInt(managerRaw,    10) : null,  // integer
+    region,
     color,
     is_active:       true,
     updated_at:      now,
   };
   if (!isEdit) payload.created_at = now;
-  if (password)     payload.password = password;
+  if (password) payload.password = password;
 
-  console.log('[Users] Saving user payload:', payload);
-  console.log('[Users] supervisor_id:', payload.supervisor_id);
-  console.log('[Users] manager_id:',   payload.manager_id);
-
-  // ── Persist to Supabase — upsert on employee_number ──
+  // ── Persist to Supabase ──
   if (supabaseClient) {
     const { error } = await supabaseClient
       .from(USERS_TABLE)
-      .upsert(payload, { onConflict: 'employee_number' });
+      .upsert(payload, { onConflict: 'id' });
     if (error) {
-      console.error('[Users] saveUserForm error:', error.message);
+      console.error('[Admin] saveUserForm error:', error.message);
       errEl.textContent = 'Save failed: ' + error.message;
       errEl.style.display = 'block';
-      saveBtn.disabled    = false;
+      saveBtn.disabled = false;
       saveBtn.textContent = 'Save User';
       return;
     }
   }
 
   // ── Update in-memory registry ──
-  const existing = allUsers.findIndex(u => u.employee_number === empNoInt);
+  const existing = allUsers.findIndex(u => u.id === userId);
   if (existing >= 0) {
     allUsers[existing] = { ...allUsers[existing], ...payload };
-    console.log('[Users] updated user', username, '| empNo:', empNoInt, '| role:', role);
+    console.log('[Admin] updated user', username, '| role:', role);
   } else {
     allUsers.push({ ...payload, password: password || '' });
-    console.log('[Users] created user', username, '| empNo:', empNoInt, '| role:', role);
+    console.log('[Admin] created user', username, '| role:', role);
   }
 
-  saveBtn.disabled    = false;
+  saveBtn.disabled = false;
   saveBtn.textContent = 'Save User';
   closeModal('user-mgmt-modal');
   renderAdmin();
@@ -4406,63 +4298,32 @@ async function loadFromSupabase() {
 //   INIT
 // ══════════════════════════════
 (async function init() {
-  // ── Show login screen immediately — do NOT block on loadUsersFromDB ──
-  // The login form uses a direct Supabase query, so it works without allUsers.
-  document.getElementById('login-screen').style.display = 'block';
+  // ── Load users from Supabase (or fall back to built-in seed) ──
+  // This must complete before we can validate a session or handle login.
+  try { await loadUsersFromDB(); } catch(e) { console.warn('[Auth] init loadUsers failed:', e.message); }
 
-  // ── Try to restore a previous session ──
+  // ── Restore session if stored ──
   try {
-    const sess = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-    const empNum = sess?.employeeNumber ?? (sess?.userId ? parseInt(sess.userId, 10) || null : null);
-
-    if (empNum && supabaseClient) {
-      // Query Supabase directly for the session user — no allUsers needed
-      const { data: sessionUser, error } = await supabaseClient
-        .from('users')
-        .select('*')
-        .eq('employee_number', empNum)
-        .limit(1)
-        .maybeSingle();
-
-      if (!error && sessionUser && sessionUser.is_active !== false) {
-        currentUser = dbUserToCurrentUser(sessionUser);
-        // Seed into allUsers cache
-        allUsers = [sessionUser];
-        console.log('[Auth] session restored', currentUser.name, '|', currentUser.role, '| empNo:', currentUser.employeeNo);
-        document.getElementById('login-screen').classList.add('hidden');
-        document.getElementById('app-shell').classList.add('visible');
-        document.body.classList.add('app-active');
-        // Load the full user list in the background for admin/assignment panels
-        loadUsersFromDB().catch(e => console.warn('[Auth] background user load failed:', e.message));
-        bootApp();
-        return;
-      }
-      // Session invalid — clear it
-      localStorage.removeItem(SESSION_KEY);
-    } else if (empNum) {
-      // No Supabase — try in-memory fallback
-      await loadUsersFromDB().catch(() => {});
-      const found = allUsers.find(u => u.employee_number === empNum);
+    const sess = JSON.parse(localStorage.getItem(SESSION_KEY)||'null');
+    if (sess?.userId) {
+      const found = allUsers.find(u => u.id === sess.userId);
       if (found && found.is_active !== false) {
         currentUser = dbUserToCurrentUser(found);
-        console.log('[Auth] session restored (offline)', currentUser.name);
+        console.log('[Auth] session restored', currentUser.name, '|', currentUser.role);
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('app-shell').classList.add('visible');
         document.body.classList.add('app-active');
         bootApp();
         return;
       }
+      // Session user not found or disabled — clear it
       localStorage.removeItem(SESSION_KEY);
     }
-  } catch(e) {
-    console.warn('[Auth] session restore error:', e.message);
-  }
+  } catch(e) {}
 
-  // ── No valid session — show login and load users in the background ──
+  // ── Show login ──
+  document.getElementById('login-screen').style.display = 'block';
   document.getElementById('login-username')?.focus();
-  // Load users in background so allUsers is ready for the admin panel
-  // and as a fallback if Supabase is slow during doLogin
-  loadUsersFromDB().catch(e => console.warn('[Auth] background user load failed:', e.message));
 })();
 </script>
 
@@ -4477,8 +4338,7 @@ async function loadFromSupabase() {
       <button class="modal-close" onclick="closeModal('user-mgmt-modal')">✕</button>
     </div>
     <div class="modal-body">
-      <!-- Hidden: stores employee_number (integer) for edit mode -->
-      <input type="hidden" id="um-emp-id"/>
+      <input type="hidden" id="um-user-id"/>
 
       <div class="form-group">
         <label class="form-label">Full Name <span class="req">*</span></label>
@@ -4486,8 +4346,8 @@ async function loadFromSupabase() {
       </div>
       <div class="form-grid-2">
         <div class="form-group">
-          <label class="form-label">Employee Number <span class="req">*</span></label>
-          <input class="form-input" id="um-empno" type="number" placeholder="e.g. 5304" min="1"/>
+          <label class="form-label">Employee Number</label>
+          <input class="form-input" id="um-empno" placeholder="e.g. 5304"/>
         </div>
         <div class="form-group">
           <label class="form-label">Username <span class="req">*</span></label>
@@ -4519,21 +4379,6 @@ async function loadFromSupabase() {
             <option value="west">West</option>
           </select>
         </div>
-      </div>
-      <!-- ── Reporting Line — integer employee_number references ── -->
-      <div class="form-group">
-        <label class="form-label">Reports to Supervisor <span style="color:var(--muted);font-weight:400">(supervisor_id)</span></label>
-        <select class="form-select" id="um-supervisor">
-          <option value="">— None —</option>
-        </select>
-        <div style="font-size:10px;color:var(--muted);margin-top:3px;">Option value = supervisor's employee number (integer)</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Reports to Manager <span style="color:var(--muted);font-weight:400">(manager_id)</span></label>
-        <select class="form-select" id="um-manager">
-          <option value="">— None —</option>
-        </select>
-        <div style="font-size:10px;color:var(--muted);margin-top:3px;">Option value = manager's employee number (integer)</div>
       </div>
       <div class="form-group">
         <label class="form-label">Avatar Colour</label>
