@@ -1961,6 +1961,39 @@ function getTechsForCurrentUser() {
   return techs;
 }
 
+// ── getSupervisorTeam: returns the employee-number strings for a supervisor's direct team ──
+// Used by ticket filtering, dashboard, reports, schedule, workload.
+function getSupervisorTeam() {
+  if (currentUser?.role !== 'regional_supervisor') return null;
+  const myEmpNo  = String(currentUser.employeeNo || currentUser.employee_number || '');
+  const myRegion = currentUser.region;
+  const team = allUsers.filter(u => {
+    if (normaliseRole(u.role) !== 'technician') return false;
+    if (u.supervisor_id != null && String(u.supervisor_id) === myEmpNo) return true;
+    // Fallback: same region, no supervisor_id set yet
+    if (!u.supervisor_id && u.region === myRegion) return true;
+    return false;
+  });
+  return {
+    empNos:  team.map(u => String(u.employee_number)), // for assignedTo matching
+    region:  myRegion,
+    myEmpNo,
+  };
+}
+
+// ── getSupervisorTickets: region-scoped ticket list for supervisor ──
+// Includes: tickets assigned to team members + unassigned tickets in region.
+function getSupervisorTickets(allTickets) {
+  const team = getSupervisorTeam();
+  if (!team) return allTickets;
+  return allTickets.filter(t => {
+    if (t.region !== team.region) return false;           // must be in supervisor's region
+    const assigned = getAssignedArr(t);
+    if (!assigned.length) return true;                   // unassigned tickets in region are visible
+    return assigned.some(empNo => team.empNos.includes(String(empNo)));
+  });
+}
+
 // Build demoUsers shape from allUsers (used by renderAdmin and legacy spots)
 function getDemoUsers() {
   return allUsers.map(u => ({
@@ -2569,9 +2602,17 @@ function renderDashboard() {
   const isRequester = role?.startsWith('requester');
   // Title
   const titleEl = document.getElementById('dash-page-title');
-  if (titleEl) titleEl.innerHTML = isRequester ? 'My <span style="color:var(--p)">Dashboard</span>' : 'Operations <span style="color:var(--p)">Dashboard</span>';
-  // Which tickets to show
-  const myList = isRequester ? tickets.filter(t=>t.createdBy===currentUser.id) : tickets;
+  if (titleEl) titleEl.innerHTML = isRequester
+    ? 'My <span style="color:var(--p)">Dashboard</span>'
+    : role === 'regional_supervisor'
+      ? `${(currentUser.region||'').charAt(0).toUpperCase()+(currentUser.region||'').slice(1)} <span style="color:var(--p)">Region</span>`
+      : 'Operations <span style="color:var(--p)">Dashboard</span>';
+
+  // Which tickets to show — supervisor uses scoped list
+  const scopedTickets = role === 'regional_supervisor'
+    ? getSupervisorTickets(tickets)
+    : tickets;
+  const myList = isRequester ? scopedTickets.filter(t=>t.createdBy===currentUser.id) : scopedTickets;
   const s = getStats(myList);
   const kpiEl = document.getElementById('dash-kpis');
   if (!kpiEl) return;
@@ -2590,31 +2631,32 @@ function renderDashboard() {
       <div class="kpi-card c-green"><div class="kpi-top"><div class="kpi-icon c-green">✅</div></div><div class="kpi-value">${mine.filter(t=>t.status==='completed').length}</div><div class="kpi-label">Completed</div></div>
       <div class="kpi-card c-teal"><div class="kpi-top"><div class="kpi-icon c-teal">📅</div></div><div class="kpi-value">${mine.filter(t=>t.status==='assigned').length}</div><div class="kpi-label">Upcoming</div></div>`;
   } else {
-    // ── Manager/Admin dashboard ──
+    // ── Manager / Admin / Supervisor dashboard ──
     const today = new Date().toISOString().split('T')[0];
-    const completedToday = tickets.filter(t =>
+    const completedToday = scopedTickets.filter(t =>
       ['completed','closed'].includes(t.status) &&
       t.visitData?.end_time &&
       new Date(t.visitData.end_time).toISOString().split('T')[0] === today
     ).length;
-    const pendingAssignment = tickets.filter(t => t.status === 'new').length;
+    const pendingAssignment = scopedTickets.filter(t => t.status === 'new').length;
+    const ss = getStats(scopedTickets);
     kpiEl.innerHTML = `
-      <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">🎫</div></div><div class="kpi-value">${s.total}</div><div class="kpi-label">Total Tickets</div></div>
-      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⚡</div></div><div class="kpi-value">${s.inProgress}</div><div class="kpi-label">Active Now</div></div>
+      <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">🎫</div></div><div class="kpi-value">${ss.total}</div><div class="kpi-label">Total Tickets</div></div>
+      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⚡</div></div><div class="kpi-value">${ss.inProgress}</div><div class="kpi-label">Active Now</div></div>
       <div class="kpi-card c-green"><div class="kpi-top"><div class="kpi-icon c-green">✅</div></div><div class="kpi-value">${completedToday}</div><div class="kpi-label">Completed Today</div></div>
       <div class="kpi-card c-red"><div class="kpi-top"><div class="kpi-icon c-red">⏳</div></div><div class="kpi-value">${pendingAssignment}</div><div class="kpi-label">Pending Assignment</div></div>
-      <div class="kpi-card c-teal"><div class="kpi-top"><div class="kpi-icon c-teal">⏱️</div></div><div class="kpi-value">${s.sla}%</div><div class="kpi-label">SLA Compliance</div></div>
-      <div class="kpi-card c-purple"><div class="kpi-top"><div class="kpi-icon c-purple">👷</div></div><div class="kpi-value">${s.assigned}</div><div class="kpi-label">Assigned</div></div>
-      <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">✅</div></div><div class="kpi-value">${s.completed}</div><div class="kpi-label">Completed</div></div>
-      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⏸</div></div><div class="kpi-value">${s.onHold}</div><div class="kpi-label">On Hold</div></div>`;
+      <div class="kpi-card c-teal"><div class="kpi-top"><div class="kpi-icon c-teal">⏱️</div></div><div class="kpi-value">${ss.sla}%</div><div class="kpi-label">SLA Compliance</div></div>
+      <div class="kpi-card c-purple"><div class="kpi-top"><div class="kpi-icon c-purple">👷</div></div><div class="kpi-value">${ss.assigned}</div><div class="kpi-label">Assigned</div></div>
+      <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">✅</div></div><div class="kpi-value">${ss.completed}</div><div class="kpi-label">Completed</div></div>
+      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⏸</div></div><div class="kpi-value">${ss.onHold}</div><div class="kpi-label">On Hold</div></div>`;
     // ── Branch / Tech quick-filter chips ──
     const dashChartsWrap = document.getElementById('dash-charts');
     if (dashChartsWrap && !document.getElementById('dash-filter-chips')) {
       const filterDiv = document.createElement('div');
       filterDiv.id = 'dash-filter-chips';
       filterDiv.style.cssText = 'padding:0 14px 4px;display:flex;flex-direction:column;gap:8px;margin-top:8px;';
-      const branches = [...new Set(tickets.map(t=>t.branch).filter(Boolean))];
-      const techs = getTechsForCurrentUser().slice(0, 5); // show first 5 techs to avoid overflow
+      const branches = [...new Set(scopedTickets.map(t=>t.branch).filter(Boolean))];
+      const techs = getTechsForCurrentUser().slice(0, 5);
       filterDiv.innerHTML = `
         <div>
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Filter by Branch</div>
@@ -2717,9 +2759,9 @@ function getFilteredTickets() {
     const empNo = currentUser?.employeeNo;
     list = list.filter(t => getAssignedArr(t).includes(empNo));
   }
-  // ── Regional Supervisor sees only their region's tickets ──
-  if (role === 'regional_supervisor' && currentUser?.region) {
-    list = list.filter(t => t.region === currentUser.region);
+  // ── Regional Supervisor: tickets scoped to their team + region ──
+  if (role === 'regional_supervisor') {
+    list = getSupervisorTickets(list);
   }
   if (currentSearch) {
     const q=currentSearch.toLowerCase();
@@ -2822,10 +2864,13 @@ function renderReports() {
   const statsBar = document.getElementById('reports-stats-bar');
   if (!el) return;
 
-  // Apply search + type filter
+  // Apply search + type filter — supervisor sees only their scoped tickets
+  const baseTickets = currentUser?.role === 'regional_supervisor'
+    ? getSupervisorTickets(tickets)
+    : tickets;
   const q = (document.getElementById('reports-search')?.value || '').toLowerCase();
   const typeF = document.getElementById('reports-type-filter')?.value || '';
-  let done = tickets.filter(t => ['completed','closed'].includes(t.status));
+  let done = baseTickets.filter(t => ['completed','closed'].includes(t.status));
   if (q) done = done.filter(t =>
     t.id.toLowerCase().includes(q) || t.customer.toLowerCase().includes(q) ||
     t.equipment.toLowerCase().includes(q) || t.branch.toLowerCase().includes(q)
@@ -2836,7 +2881,7 @@ function renderReports() {
 
   // Stats bar
   if (statsBar) {
-    const all = tickets.filter(t=>['completed','closed'].includes(t.status));
+    const all = baseTickets.filter(t=>['completed','closed'].includes(t.status));
     const byType = (type) => all.filter(t=>t.type===type).length;
     statsBar.innerHTML = [
       { label:'Total Completed', val: all.length, color:'var(--p)' },
@@ -2930,7 +2975,10 @@ function renderSchedule() {
   for(let i=startDay-1;i>=0;i--) cells.push({day:new Date(yr,mo,0).getDate()-i, thisMonth:false});
   for(let i=1;i<=daysInMonth;i++) cells.push({day:i,thisMonth:true});
   while(cells.length%7!==0) cells.push({day:cells.length-daysInMonth-startDay+1,thisMonth:false});
-  const events = tickets.filter(t=>t.date&&t.status!=='completed');
+  const scheduleTickets = currentUser?.role === 'regional_supervisor'
+    ? getSupervisorTickets(tickets)
+    : tickets;
+  const events = scheduleTickets.filter(t=>t.date&&t.status!=='completed');
   body.innerHTML = cells.map(c=>{
     const isToday=c.thisMonth&&c.day===15;
     const key=c.thisMonth?`2026-04-${String(c.day).padStart(2,'0')}`:null;
@@ -2940,7 +2988,7 @@ function renderSchedule() {
     return `<div class="sch-day ${!c.thisMonth?'opacity-40':''}${isToday?' today':''}"><div class="sch-day-num" style="${!c.thisMonth?'opacity:.3':''}">${c.day}</div>${chips}${more}</div>`;
   }).join('');
   // This week visits
-  const thisWeek = tickets.filter(t=>['2026-04-14','2026-04-15','2026-04-16','2026-04-17','2026-04-18'].includes(t.date));
+  const thisWeek = scheduleTickets.filter(t=>['2026-04-14','2026-04-15','2026-04-16','2026-04-17','2026-04-18'].includes(t.date));
   if (weekList) weekList.innerHTML = thisWeek.map(t=>`
     <div class="card" style="padding:12px 14px;display:flex;align-items:center;gap:10px;">
       <div style="font-family:'JetBrains Mono';font-size:11px;color:var(--p);font-weight:700;width:80px;flex-shrink:0">${t.date?.slice(5)||'—'}</div>
