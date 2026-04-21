@@ -3868,8 +3868,11 @@ function closeTechVisit() {
 //   Create, edit, disable/enable users from the Admin Panel.
 // ══════════════════════════════════════════════════════════════
 
-function renderAdmin() {
-  // ── Stats ──
+async function renderAdmin() {
+  const el   = document.getElementById('admin-user-list');
+  const ukpi = document.getElementById('admin-user-count');
+
+  // ── Stats (tickets) ──
   const s = getStats();
   const atEl = document.getElementById('admin-total');
   const adEl = document.getElementById('admin-done');
@@ -3877,13 +3880,40 @@ function renderAdmin() {
   if (atEl) atEl.textContent = s.total;
   if (adEl) adEl.textContent = s.completed;
   if (aoEl) aoEl.textContent = s.open;
-
-  // ── User count KPI ──
-  const ukpi = document.getElementById('admin-user-count');
-  if (ukpi) ukpi.textContent = allUsers.length;
-
-  const el = document.getElementById('admin-user-list');
   if (!el) return;
+
+  // ── Show loading state ──
+  el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px;">Loading users…</div>';
+
+  // ── Fetch all users directly from Supabase ──
+  let users = [];
+  try {
+    if (supabaseClient) {
+      const { data, error } = await supabaseClient
+        .from('users')
+        .select('*')
+        .order('employee_number');
+      if (error) throw error;
+      users = data || [];
+      // Sync into allUsers cache so edit/disable modals work
+      allUsers = users;
+      console.log('[Admin] Loaded', users.length, 'users from Supabase');
+    } else {
+      users = allUsers;
+    }
+  } catch(e) {
+    console.error('[Admin] Failed to load users:', e.message);
+    // Fall back to whatever is in allUsers cache
+    users = allUsers;
+    el.innerHTML += '<div style="padding:8px 14px;font-size:11px;color:var(--warn);">⚠️ Could not refresh from database — showing cached data.</div>';
+  }
+
+  if (ukpi) ukpi.textContent = users.length;
+
+  if (!users.length) {
+    el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px;">No users found.</div>';
+    return;
+  }
 
   const roleColors = {
     admin:'background:var(--err-bg);color:var(--err)',
@@ -3905,31 +3935,34 @@ function renderAdmin() {
     ? `<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(0,90,169,.1);color:var(--p);font-weight:700;margin-left:4px;">${r.charAt(0).toUpperCase()+r.slice(1)}</span>`
     : '';
 
-  // Group by role order
+  // Sort: by role priority then name
   const order = ['admin','technical_manager','regional_supervisor','technician','requester_consumer','requester_commercial'];
-  const sorted = [...allUsers].sort((a,b) => {
-    const ia = order.indexOf(a.role), ib = order.indexOf(b.role);
-    if (ia !== ib) return ia - ib;
+  const sorted = [...users].sort((a,b) => {
+    const ra = normaliseRole(a.role), rb = normaliseRole(b.role);
+    const ia = order.indexOf(ra), ib = order.indexOf(rb);
+    if (ia !== ib) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
     return (a.full_name||'').localeCompare(b.full_name||'');
   });
 
   el.innerHTML = sorted.map(u => {
-    const inactive = u.is_active === false;
-    const roleStyle = roleColors[u.role] || 'background:#f3f4f6;color:#374151';
+    const inactive   = u.is_active === false;
+    const normRole   = normaliseRole(u.role);
+    const roleStyle  = roleColors[normRole] || 'background:#f3f4f6;color:#374151';
+    const roleLabel  = roleLabels[normRole] || u.role || '—';
     return `
     <div class="admin-user-row" style="${inactive ? 'opacity:.5;' : ''}">
       <div style="width:36px;height:36px;border-radius:50%;background:${u.color||'#6b7280'};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;color:#fff;flex-shrink:0;">${initials(u.full_name)}</div>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:700;color:var(--txt)">${u.full_name}${inactive ? ' <span style="font-size:10px;color:var(--muted)">(Disabled)</span>' : ''}</div>
+        <div style="font-size:13px;font-weight:700;color:var(--txt)">${u.full_name||'—'}${inactive ? ' <span style="font-size:10px;color:var(--muted)">(Disabled)</span>' : ''}</div>
         <div style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
-          ${u.username} · ${u.employee_number || '—'}${regionBadge(u.region)}
+          ${u.username||'—'} · ${u.employee_number||'—'}${regionBadge(u.region)}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
-        <div style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;${roleStyle}">${roleLabels[u.role]||u.role}</div>
+        <div style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;${roleStyle}">${roleLabel}</div>
         <div style="display:flex;gap:4px;">
           <button class="btn btn-outline btn-xs" onclick="openEditUser(${u.employee_number})" title="Edit user">✏️</button>
-          <button class="btn btn-xs" style="${inactive ? 'background:var(--ok);color:#fff;' : 'background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);'}" onclick="toggleUserActive(${u.employee_number},${!inactive})" title="${inactive ? 'Enable' : 'Disable'}">${inactive ? '✓ Enable' : '⏸ Disable'}</button>
+          <button class="btn btn-xs" style="${inactive ? 'background:var(--ok);color:#fff;' : 'background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);'}" onclick="toggleUserActive(${u.employee_number},${!inactive})">${inactive ? '✓ Enable' : '⏸ Disable'}</button>
         </div>
       </div>
     </div>`;
