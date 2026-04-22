@@ -1753,26 +1753,21 @@ const nonTechUsers = [
 ];
 
 // ══════════════════════════════════════════════════════════════
-//   USERS TABLE INTEGRATION  (v9)
+//   REAL users TABLE SCHEMA (Supabase)
 //
-//   Supabase table: users
-//   CREATE TABLE IF NOT EXISTS users (
-//     employee_number  integer primary key,      -- THE main identifier
-//     full_name        text    not null,
-//     username         text    unique not null,
-//     password         text    not null,
-//     role             text    not null default 'technician',
-//     region           text,
-//     supervisor_id    integer null references users(employee_number),
-//     manager_id       integer null references users(employee_number),
-//     is_active        boolean default true,
-//     color            text    default '#005AA9',
-//     created_at       timestamptz default now(),
-//     updated_at       timestamptz default now()
+//   create table users (
+//     id              uuid        primary key default gen_random_uuid(),
+//     employee_number text        unique not null,
+//     username        text        unique,
+//     full_name       text        not null,
+//     role            text        not null,
+//     region          text,
+//     supervisor_id   text,
+//     password        text        not null,
+//     is_active       boolean     not null default true,
+//     created_at      timestamptz not null default now()
 //   );
-//   -- RLS: allow anon all
-//   ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-//   CREATE POLICY "anon_all" ON users FOR ALL TO anon USING (true) WITH CHECK (true);
+//   RLS: anon SELECT enabled for login lookup
 // ══════════════════════════════════════════════════════════════
 const USERS_TABLE = 'users';
 
@@ -1938,6 +1933,8 @@ function normaliseRole(raw) {
     'manager':              'technical_manager',
     'regional_supervisor':  'regional_supervisor',
     'supervisor':           'regional_supervisor',
+    'senior_technician':    'senior_technician',
+    'senior':               'senior_technician',
     'technician':           'technician',
     'tech':                 'technician',
     'field_technician':     'technician',
@@ -1973,14 +1970,6 @@ function dbUserToCurrentUser(u) {
     is_active:   u.is_active !== false,
   };
 }
-
-// Password lookup keyed by integer employee_number
-const NON_TECH_PASSWORDS = {
-  1000: 'demo',   // admin
-  1001: 'demo',   // requester consumer
-  1002: 'demo',   // requester commercial
-  1003: 'demo',   // technical manager
-};
 
 // ── TECH COLOUR helper ────────────────────────────────────────────────────
 // color is not in the real users table.
@@ -2149,7 +2138,6 @@ async function doLogin() {
 
   console.log('[AUTH] Login attempt:', input);
 
-  // Always-reset helper
   const fail = (msg) => {
     console.warn('[AUTH] Failed:', msg);
     errEl.textContent   = msg;
@@ -2158,53 +2146,52 @@ async function doLogin() {
     btn.textContent     = 'Log In →';
   };
 
-  // ── Query Supabase users table ────────────────────────────────────────────
-  // Match username (case-insensitive) OR employee_number, is_active = true.
-  // No Supabase Auth — plain table lookup as specified.
+  // ── Query users table (username OR employee_number) ───────────────────────────────────────────
   let found = null;
   try {
     if (!supabaseClient) throw new Error('Supabase client not ready');
 
-    // 1) Try username match
+    const COLS = 'employee_number, username, full_name, role, region, supervisor_id, password, is_active';
+
+    // Try username first (case-insensitive)
     let { data, error } = await supabaseClient
       .from('users')
-      .select('employee_number, username, full_name, role, region, supervisor_id, password, is_active')
+      .select(COLS)
       .ilike('username', input)
-      .eq('is_active', true)
       .limit(1)
       .maybeSingle();
-
     if (error) throw error;
 
-    // 2) If no username match and input is numeric, try employee_number
+    // Fall back to employee_number if input is numeric
     if (!data && /^\d+$/.test(input)) {
-      const res2 = await supabaseClient
+      const r2 = await supabaseClient
         .from('users')
-        .select('employee_number, username, full_name, role, region, supervisor_id, password, is_active')
+        .select(COLS)
         .eq('employee_number', input)
-        .eq('is_active', true)
         .limit(1)
         .maybeSingle();
-      if (res2.error) throw res2.error;
-      data = res2.data;
+      if (r2.error) throw r2.error;
+      data = r2.data;
     }
 
     found = data || null;
 
   } catch(e) {
-    console.error('[AUTH] Supabase query error:', e.message);
+    console.error('[AUTH] Query error:', e.message);
     return fail('Login service unavailable. Please try again.');
   }
 
   console.log('[AUTH] Query result:', found
-    ? { username: found.username, employee_number: found.employee_number, role: found.role }
+    ? { username: found.username, employee_number: found.employee_number, role: found.role, is_active: found.is_active }
     : 'not found');
 
-  // ── Validate ──────────────────────────────────────────────────────────────
+  // ── Validate ────────────────────────────────────────────────────────────────────────
   if (!found) {
-    return fail('Invalid username or password.');
+    return fail('User not found.');
   }
-  // Use verifyPassword — handles both plaintext (legacy) and SHA-256 hashed passwords
+  if (found.is_active === false) {
+    return fail('User inactive. Contact your administrator.');
+  }
   const passwordOk = await verifyPassword(password, found.password);
   if (!passwordOk) {
     pwdEl.value = '';
@@ -2212,7 +2199,7 @@ async function doLogin() {
     return fail('Invalid username or password.');
   }
 
-  // ── Success ───────────────────────────────────────────────────────────────
+  // ── Success ───────────────────────────────────────────────────────────────────────────
   try {
     currentUser        = dbUserToCurrentUser(found);
     window.currentUser = currentUser;
@@ -2220,12 +2207,11 @@ async function doLogin() {
     console.log('[AUTH] Success:', {
       employee_number: found.employee_number,
       username:        found.username,
-      full_name:       found.full_name,
       role:            found.role,
       region:          found.region,
     });
 
-    // Store the five required fields in localStorage
+    // Single canonical session object — clear all legacy keys first
     const sessionPayload = {
       employee_number: found.employee_number,
       username:        found.username,
@@ -2233,23 +2219,21 @@ async function doLogin() {
       role:            found.role,
       region:          found.region || null,
     };
+    ['df_hub_session_v4', 'currentUser', 'sessionUser'].forEach(k => localStorage.removeItem(k));
 
     const rememberMe = document.getElementById('login-remember')?.checked;
     if (rememberMe) {
-      localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: found.employee_number }));
-      localStorage.setItem('currentUser', JSON.stringify(sessionPayload));
-      console.log('[AUTH] Session persisted (Remember Me)');
+      localStorage.setItem(DELTA_SESSION, JSON.stringify(sessionPayload));
+      console.log('[AUTH] Session persisted (delta_session)');
     } else {
-      localStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem('currentUser');
+      localStorage.removeItem(DELTA_SESSION);
     }
 
-    // Seed into allUsers cache so the rest of the app can use it
-    if (!allUsers.find(u => u.employee_number === found.employee_number)) {
+    // Seed into allUsers cache
+    if (!allUsers.find(u => String(u.employee_number) === String(found.employee_number))) {
       allUsers.push(found);
     }
 
-    // Transition to app
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app-shell').classList.add('visible');
     document.body.classList.add('app-active');
@@ -2262,16 +2246,16 @@ async function doLogin() {
   }
 }
 
-
 function doLogout() {
-  localStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem('currentUser');
-  localStorage.removeItem('sessionUser');
+  [DELTA_SESSION, 'df_hub_session_v4', 'currentUser', 'sessionUser'].forEach(k =>
+    localStorage.removeItem(k)
+  );
   currentUser        = null;
   window.currentUser = null;
-  console.log('[Auth] logged out — reloading');
+  console.log('[AUTH] Logged out');
   location.reload();
 }
+
 
 // ── ROLE CONFIG ──
 // pages: which pages are accessible; bnav: bottom nav items; canAssign, canChangeStatus, etc.
@@ -2368,6 +2352,24 @@ const ROLE_CONFIG = {
     canManageAMC: false, canEditInventory: false, canViewAllTickets: false,
     canCreateRequest: true, canSeeAssignBtn: true,
   },
+  // Senior technicians: same access as technician but with a distinct label
+  senior_technician: {
+    label:'Senior Technician', color:'#2E75B6',
+    pages: ['my-jobs','active-visit'],
+    bnav: [
+      {id:'my-jobs',      icon:'📋', label:'My Jobs'},
+      {id:'active-visit', icon:'⚙️', label:'Active Visit'},
+    ],
+    menuSections: [
+      { label:'Field Work', items:[
+        {page:'my-jobs',      icon:'📋', label:'My Jobs'},
+        {page:'active-visit', icon:'⚙️', label:'Active Visit'},
+      ]}
+    ],
+    canAssign: false, canChangeStatus: true, canCloseTicket: true,
+    canManageAMC: false, canEditInventory: false, canViewAllTickets: false,
+    canCreateRequest: false, canSeeAssignBtn: false,
+  },
   technician: {
     label:'Field Technician', color:'#059669',
     pages: ['my-jobs','active-visit'],
@@ -2415,10 +2417,12 @@ const ROLE_CONFIG = {
 };
 
 // ── STORAGE ──
-// ── STORAGE KEYS (kept for session/counter fallback) ──
-const STORAGE_KEY = 'df_hub_tickets_v4';   // legacy key — no longer primary
-const COUNTER_KEY = 'df_hub_counter_v4';
-const SESSION_KEY = 'df_hub_session_v4';
+// ── STORAGE KEYS ──
+const STORAGE_KEY    = 'df_hub_tickets_v4';   // legacy — ticket cache
+const COUNTER_KEY    = 'df_hub_counter_v4';
+const DELTA_SESSION  = 'delta_session';        // single canonical session key
+const SESSION_KEY    = DELTA_SESSION;          // alias keeps old references working
+const PENDING_SYNC   = 'delta_pending_sync';   // offline checklist backup
 
 // ── Local-only ID generator (fallback if DB unreachable) ──
 function nextIdLocal() {
@@ -2521,9 +2525,16 @@ function getStats(list) {
     sla: list.length ? Math.round((list.filter(t=>['completed','closed'].includes(t.status)).length/list.length)*100) : 100,
   };
 }
-function showToast(msg) {
-  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2600);
+function showToast(msg, opts) {
+  const t = document.getElementById('toast');
+  // opts.retry: function — adds a Retry button to the toast
+  if (opts?.retry) {
+    t.innerHTML = `<span>${msg}</span><button onclick="(${opts.retry.toString()})()" style="margin-left:10px;padding:3px 10px;border:1px solid rgba(255,255,255,.5);border-radius:6px;background:transparent;color:inherit;font-size:12px;font-weight:700;cursor:pointer;">Retry</button>`;
+  } else {
+    t.textContent = msg;
+  }
+  t.classList.add('show');
+  setTimeout(() => { t.classList.remove('show'); t.textContent = ''; }, 3200);
 }
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -3577,173 +3588,130 @@ async function savePhotos() {
   const count  = arr.length;
   if (!count) { showToast('Please add at least one photo'); return; }
 
-  console.log(`[savePhotos] Starting: ${count} photo(s) → bucket '${bucket}' for ticket ${activeTechJobId}`);
-  console.log('[savePhotos] Raw array before upload:', arr);
+  // ── Offline guard ──────────────────────────────────────────────────────────
+  if (!navigator.onLine) {
+    showToast('\u{1F4E1} Offline \u2014 photos saved locally. Will upload when online.');
+    return;
+  }
 
   const saveBtn = document.querySelector('#photos-modal .btn-p');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading\u2026'; }
+
+  console.log(`[Photos] Starting: ${count} photo(s) \u2192 bucket '${bucket}' ticket ${activeTechJobId}`);
+  console.log('[Photos] Raw array:', arr);
 
   const failedReasons = [];
 
-  // ── Upload loop — replace each entry with a plain URL string in-place ──
+  // ── Upload loop ─────────────────────────────────────────────────────────────
   for (let i = 0; i < arr.length; i++) {
     const p = arr[i];
 
-    // Already a plain https:// string — nothing to do
-    if (typeof p === 'string' && p.startsWith('http')) {
-      console.log(`[savePhotos] [${i}] Already URL string, skipping`);
-      continue;
-    }
+    if (typeof p === 'string' && p.startsWith('http')) continue; // already uploaded
 
-    // Object that already has storageUrl — collapse to plain string
     if (typeof p === 'object' && p !== null && p.storageUrl) {
-      console.log(`[savePhotos] [${i}] Collapsing existing storageUrl to string`);
       if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
       arr[i] = p.storageUrl;
       continue;
     }
 
-    // Need to upload
-    if (typeof p !== 'object' || p === null) {
-      console.warn(`[savePhotos] [${i}] Skipping malformed entry:`, p);
-      continue;
-    }
+    if (typeof p !== 'object' || p === null) continue;
 
     const safeName = (p.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
     const filePath = `${activeTechJobId}/${Date.now()}-${safeName}`;
-    let   result   = { url: null, error: 'No uploadable source found' };
+    let result = { url: null, error: 'No uploadable source' };
 
-    // ── Log full entry state so we can see exactly what survived ──
-    console.log(`[savePhotos] [${i}] Entry state:`, {
-      name:          p.name,
-      hasFile:       p.file instanceof File,
-      fileType:      p.file?.type,
-      fileSize:      p.file?.size,
-      hasDataUrl:    typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:'),
-      previewIsBlob: typeof p.previewUrl === 'string' && p.previewUrl.startsWith('blob:'),
-      previewIsData: typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:'),
-    });
-
-    if (p.file instanceof File) {
-      // ── Best path: File object is still alive in memory ──
-      console.log(`[savePhotos] [${i}] Uploading File: ${p.name}, size: ${p.file.size}, type: ${p.file.type}`);
-      result = await storage.uploadFile(bucket, filePath, p.file);
-
-    } else if (typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:')) {
-      // ── dataUrl was stored (e.g. from camera capture) ──
-      console.log(`[savePhotos] [${i}] Uploading dataUrl: ${p.name}`);
-      result = await storage.uploadDataUrl(bucket, filePath, p.dataUrl);
-
-    } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:')) {
-      // ── previewUrl is a data: URI (not blob:) ──
-      console.log(`[savePhotos] [${i}] Uploading previewUrl as data: ${p.name}`);
-      result = await storage.uploadDataUrl(bucket, filePath, p.previewUrl);
-
-    } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('blob:')) {
-      // ── blob: URL is still alive — fetch it as a Blob and upload ──
-      console.log(`[savePhotos] [${i}] Fetching blob URL and uploading: ${p.name}`);
-      try {
-        const fetchResp = await fetch(p.previewUrl);
-        if (!fetchResp.ok) throw new Error('Blob fetch failed: ' + fetchResp.status);
-        const blob = await fetchResp.blob();
+    try {
+      if (typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:')) {
+        result = await storage.uploadDataUrl(bucket, filePath, p.dataUrl);
+      } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:')) {
+        result = await storage.uploadDataUrl(bucket, filePath, p.previewUrl);
+      } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('blob:')) {
+        const resp = await fetch(p.previewUrl);
+        if (!resp.ok) throw new Error('Blob fetch failed: ' + resp.status);
+        const blob = await resp.blob();
         const mime = blob.type || 'image/jpeg';
         const ext  = mime.includes('png') ? '.png' : '.jpg';
         const blobFile = new File([blob], safeName.replace(/\.[^.]+$/, ext), { type: mime });
-        console.log(`[savePhotos] [${i}] Blob fetched OK — size: ${blob.size}, type: ${mime}`);
         result = await storage.uploadFile(bucket, filePath, blobFile);
-      } catch(blobErr) {
-        console.error(`[savePhotos] [${i}] Blob fetch failed:`, blobErr.message);
-        result = { url: null, error: 'Blob fetch failed: ' + blobErr.message };
+      } else if (p.file instanceof File) {
+        result = await storage.uploadFile(bucket, filePath, p.file);
       }
-
-    } else {
-      // ── Nothing uploadable — log everything for debugging ──
-      console.error('[savePhotos] Upload failed for entry:', p);
-      console.error('[savePhotos] Bucket:', bucket);
-      console.error('[savePhotos] Ticket:', activeTechJobId);
-      console.error('[savePhotos] Reason: no File, dataUrl, blob URL, or data previewUrl available');
-      console.error('[savePhotos] Full entry object keys:', Object.keys(p));
-      result = { url: null, error: 'No uploadable source (File may have been garbage collected)' };
+    } catch(e) {
+      result = { url: null, error: e.message || 'Upload error' };
+      console.error(`[Photos] [${i}] Exception:`, e.message);
     }
 
     if (result.url) {
       if (p.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(p.previewUrl);
-      arr[i] = result.url; // ← canonical plain URL string
+      arr[i] = result.url;
     } else {
-      const reason = result.error || 'Unknown error';
-      console.error('[savePhotos] Upload failed for entry:', p);
-      console.error('[savePhotos] Bucket:', bucket);
-      console.error('[savePhotos] Ticket:', activeTechJobId);
-      console.error('[savePhotos] Reason:', reason);
-      failedReasons.push(`${p.name || 'photo'}: ${reason}`);
-      arr[i] = { ...p, _failed: true, _failReason: reason };
+      console.error(`[Photos] [${i}] Failed:`, result.error);
+      failedReasons.push(`${p.name || 'photo'}: ${result.error}`);
+      arr[i] = { ...p, _failed: true, _failReason: result.error };
     }
   }
 
-  console.log('[savePhotos] Raw array after upload:', arr);
-
-  // ── Build successUrls from plain strings only ──
-  const successUrls = arr.filter(p => typeof p === 'string' && p.startsWith('http'));
+  const successUrls   = arr.filter(p => typeof p === 'string' && p.startsWith('http'));
   const uploadedCount = successUrls.length;
 
-  console.log('[savePhotos] Final plain URL strings:', successUrls);
+  console.log('[Photos] Uploaded:', uploadedCount, '/', count);
 
-  // ── If ZERO uploads succeeded — keep modal open, show real reason ──
+  // ── All failed \u2014 keep modal open, show retry ──────────────────────────────────
   if (uploadedCount === 0) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
-    const firstReason = failedReasons[0] || 'Upload failed — check Supabase Storage RLS policies for this bucket';
-    console.error('[savePhotos] All uploads failed. Reasons:', failedReasons);
-    showToast('⚠️ Photo upload failed');
-    // Restore arr to original pending objects (strip _failed marker)
-    const originals = arr.filter(p => typeof p === 'object' && p !== null).map(p => {
-      const { _failed, _failReason, ...rest } = p;
-      return rest;
-    });
+    // Restore pending entries (strip _failed markers)
+    const restored = arr
+      .filter(p => typeof p === 'object' && p !== null)
+      .map(({ _failed, _failReason, ...rest }) => rest);
     arr.length = 0;
-    originals.forEach(o => arr.push(o));
+    restored.forEach(o => arr.push(o));
+
+    // Show retry toast with button
+    showToast('\u26A0\uFE0F Upload failed. Retry.', { retry: () => savePhotos() });
     renderPhotoGrid();
-    return; // ← keep modal open for retry
+    return;
   }
 
-  // ── Partial failure — surface which ones failed ──
+  // ── Partial failure ────────────────────────────────────────────────────────
   if (failedReasons.length > 0) {
-    showToast(`⚠️ ${failedReasons.length} photo(s) failed: ${failedReasons[0]}`);
-    console.error('[savePhotos] Partial failure reasons:', failedReasons);
+    showToast(`\u26A0\uFE0F ${failedReasons.length} photo(s) failed. Others saved.`);
   }
 
-  // ── Replace live array with only successful URLs ──
+  // ── Replace live array with only successful URLs ───────────────────────────
   arr.length = 0;
   successUrls.forEach(u => arr.push(u));
-
-  // ── stampEdit AFTER upload loop — so saveLocalCache sees clean arrays ──
   stampEdit(vd);
-
-  console.log('[savePhotos] Final beforePhotos:', vd.beforePhotos);
-  console.log('[savePhotos] Final afterPhotos:',  vd.afterPhotos);
-
   renderPhotoGrid();
 
-  console.log('[Checklist] Saved image URLs:', successUrls);
-
+  // ── Persist checklist to Supabase (with pending_sync fallback) ────────────
   const checklistField = currentPhotoType === 'before'
     ? { before_photos: successUrls }
     : { after_photos:  successUrls };
 
   if (activeTechJobId) {
-    const ok = await storage.saveChecklist(activeTechJobId, checklistField);
-    console.log(`[savePhotos] Checklist save ${ok ? '✅ OK' : '❌ FAILED'}`);
-    await db.saveVisit(activeTechJobId, vd);
-    console.log('[DB saveVisit] Saved visitData with', vd.beforePhotos.length, 'before +', vd.afterPhotos.length, 'after photos');
+    try {
+      const ok = await storage.saveChecklist(activeTechJobId, checklistField);
+      if (ok) {
+        console.log('[Photos] Checklist saved \u2705');
+        await db.saveVisit(activeTechJobId, vd);
+      } else {
+        throw new Error('saveChecklist returned falsy');
+      }
+    } catch(e) {
+      console.error('[Photos] Checklist save failed:', e.message);
+      savePendingSync(activeTechJobId, checklistField);
+      showToast('\u26A0\uFE0F Not synced \u2014 saved locally');
+    }
   }
 
   if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
   closeModal('photos-modal');
   syncChecklistUI(vd);
-  // Only show success toast when at least one photo was uploaded
   if (uploadedCount > 0) {
-    showToast(`✅ ${uploadedCount}/${count} photo${count!==1?'s':''} uploaded`);
+    showToast(`\u2705 ${uploadedCount}/${count} photo${count!==1?'s':''} uploaded`);
   }
 }
+
 
 // ══════════════════════════════════════════════════
 //   SPARE PARTS
@@ -4805,34 +4773,120 @@ async function clearAllData() {
 //   SUPABASE LOAD & SYNC
 // ══════════════════════════════════════════════════════
 
+// ── getVisibleTickets ─────────────────────────────────────────────────────
+// Strict role-based ticket filtering applied after fetching all tickets.
+// allUsers must already be loaded (called in loadFromSupabase after user fetch).
+function getVisibleTickets(allTickets, user, users) {
+  if (!user) return [];
+  const role  = user.role;
+  const empNo = String(user.employeeNo || user.employee_number || '');
+
+  // Admin / Technical Manager — full access
+  if (['admin', 'technical_manager'].includes(role)) return allTickets;
+
+  // Technician / Senior Technician — only tickets assigned to them
+  if (['technician', 'senior_technician'].includes(role)) {
+    return allTickets.filter(t => {
+      const assigned = getAssignedArr(t).map(x => String(x));
+      return assigned.includes(empNo);
+    });
+  }
+
+  // Regional Supervisor — tickets assigned to any direct team member
+  // Team = all users whose supervisor_id === this supervisor's employee_number
+  if (role === 'regional_supervisor') {
+    const teamIds = users
+      .filter(u => String(u.supervisor_id) === empNo)
+      .map(u => String(u.employee_number));
+
+    // Also include tickets the supervisor themselves created
+    return allTickets.filter(t => {
+      if (String(t.createdBy) === empNo) return true;
+      const assigned = getAssignedArr(t).map(x => String(x));
+      return assigned.some(id => teamIds.includes(id));
+    });
+  }
+
+  return [];
+}
+
+// ── savePendingSync ───────────────────────────────────────────────────────
+// Saves a failed checklist/visit save to localStorage so it can be retried.
+function savePendingSync(ticketId, payload) {
+  try {
+    const existing = JSON.parse(localStorage.getItem(PENDING_SYNC) || '{}');
+    existing[ticketId] = { payload, savedAt: Date.now() };
+    localStorage.setItem(PENDING_SYNC, JSON.stringify(existing));
+    console.warn('[Sync] Saved to pending_sync for ticket:', ticketId);
+  } catch(e) {
+    console.error('[Sync] Could not write to pending_sync:', e.message);
+  }
+}
+
+// ── retryPendingSync ──────────────────────────────────────────────────────
+// Called after coming back online — attempts to flush pending_sync items.
+async function retryPendingSync() {
+  const raw = localStorage.getItem(PENDING_SYNC);
+  if (!raw) return;
+  let pending;
+  try { pending = JSON.parse(raw); } catch { return; }
+  const ids = Object.keys(pending);
+  if (!ids.length) return;
+  console.log('[Sync] Retrying', ids.length, 'pending item(s)…');
+  let flushed = 0;
+  for (const ticketId of ids) {
+    try {
+      const { payload } = pending[ticketId];
+      const ok = await storage.saveChecklist(ticketId, payload);
+      if (ok) { delete pending[ticketId]; flushed++; }
+    } catch(e) {
+      console.warn('[Sync] Retry failed for', ticketId, e.message);
+    }
+  }
+  localStorage.setItem(PENDING_SYNC, JSON.stringify(pending));
+  if (flushed > 0) showToast(`✅ ${flushed} pending save${flushed!==1?'s':''} synced`);
+}
+
 async function loadFromSupabase() {
   showDbLoading('Loading tickets…');
   console.log('[DB] Loading tickets from Supabase…');
+
+  // ── 1. Ensure allUsers is populated for team filtering ──
+  if (allUsers.length === 0) {
+    try { await loadUsersFromDB(); } catch(e) {
+      console.warn('[DB] Could not load users:', e.message);
+    }
+  }
+
+  // ── 2. Fetch all tickets from Supabase ──
   const dbTickets = await db.load();
   hideDbLoading();
 
   if (dbTickets === null) {
-    console.warn('[DB] Load returned null — using local cache (offline mode)');
+    console.warn('[DB] Load returned null — using local cache (offline)');
     showToast('⚠️ Offline — showing cached data');
     return;
   }
 
-  console.log('[DB] Loaded:', dbTickets.length);
+  console.log('[DB] Fetched', dbTickets.length, 'total tickets');
 
-  if (dbTickets.length === 0 && SEED_TICKETS.length > 0) {
+  // ── 3. Seed sample data on very first run ──
+  let rawTickets = dbTickets;
+  if (rawTickets.length === 0 && SEED_TICKETS.length > 0) {
     showDbLoading('First run — seeding sample data…');
-    console.log('[DB] Empty DB — seeding sample data…');
-    for (const t of SEED_TICKETS) {
-      await db.save(t);
-    }
+    for (const t of SEED_TICKETS) { await db.save(t); }
     hideDbLoading();
-    tickets = JSON.parse(JSON.stringify(SEED_TICKETS));
-    console.log('[DB] Seeded', SEED_TICKETS.length, 'sample ticket(s)');
-  } else {
-    // Final defensive round-trip — guarantees tickets[] is 100% plain JSON
-    tickets = JSON.parse(JSON.stringify(dbTickets));
+    rawTickets = JSON.parse(JSON.stringify(SEED_TICKETS));
+    console.log('[DB] Seeded', rawTickets.length, 'sample ticket(s)');
   }
 
+  // ── 4. Apply role-based visibility filter ──
+  const visible = getVisibleTickets(rawTickets, currentUser, allUsers);
+  console.log('[DB] Visible after role filter:', visible.length,
+    '(role:', currentUser?.role, ')');
+
+  // ── 5. Store and render ──
+  tickets = JSON.parse(JSON.stringify(visible));
   saveLocalCache(tickets);
   renderAll();
 }
@@ -4841,21 +4895,18 @@ async function loadFromSupabase() {
 //   INIT — always show login screen
 // ══════════════════════════════
 window.addEventListener('DOMContentLoaded', () => {
-  // Clear any stored session so login is always required on fresh page load
-  localStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem('currentUser');
-  localStorage.removeItem('sessionUser');
+  // Clear ALL session keys on fresh load — always start at login
+  [DELTA_SESSION, 'df_hub_session_v4', 'currentUser', 'sessionUser'].forEach(k =>
+    localStorage.removeItem(k)
+  );
 
-  // Ensure login screen is visible and app shell is hidden
   const loginEl = document.getElementById('login-screen');
   const appEl   = document.getElementById('app-shell');
   if (loginEl) { loginEl.classList.remove('hidden'); loginEl.style.display = ''; }
   if (appEl)   { appEl.classList.remove('visible'); }
   document.body.classList.remove('app-active');
 
-  // Focus username field
   setTimeout(() => document.getElementById('login-username')?.focus(), 100);
-
   console.log('[INIT] Login screen ready — session cleared');
 });
 </script>
@@ -5519,7 +5570,6 @@ function buildActionReportHTML(t) {
 //   OFFLINE / ONLINE INDICATOR
 // ══════════════════════════════════════════
 (function initOfflineIndicator() {
-  // Inject pill element
   const pill = document.createElement('div');
   pill.id = 'offline-pill';
   pill.innerHTML = '📡 Offline — changes saved locally';
@@ -5528,6 +5578,8 @@ function buildActionReportHTML(t) {
   function updateOnlineStatus() {
     if (navigator.onLine) {
       pill.classList.remove('visible');
+      // Attempt to flush any locally-saved checklist items
+      retryPendingSync().catch(()=>{});
     } else {
       pill.classList.add('visible');
     }
