@@ -2001,17 +2001,20 @@ function dbUserToCurrentUser(u) {
   const cfg   = ROLE_CONFIG[role] || ROLE_CONFIG.technician;
   const empNo = String(u.employee_number);
   return {
-    id:          empNo,                            // app-internal key
-    employeeNo:  empNo,
-    name:        u.full_name,
-    username:    u.username,
-    role,                                          // normalised ROLE_CONFIG key
-    region:      u.region   || null,
-    supervisorId: u.supervisor_id ? String(u.supervisor_id) : null,
-    avatar:      initials(u.full_name),
-    color:       cfg.color  || '#005AA9',          // from ROLE_CONFIG, not DB
-    roleLabel:   cfg.label  || role,
-    is_active:   u.is_active !== false,
+    id:              empNo,           // app-internal key
+    employeeNo:      empNo,           // legacy alias
+    employee_number: empNo,           // canonical — matches DB column name
+    name:            u.full_name,     // legacy alias
+    full_name:       u.full_name,     // canonical — matches DB column name
+    username:        u.username,
+    role,
+    region:          u.region   || null,
+    supervisor_id:   u.supervisor_id ? String(u.supervisor_id) : null,
+    supervisorId:    u.supervisor_id ? String(u.supervisor_id) : null, // legacy alias
+    avatar:          initials(u.full_name),
+    color:           cfg.color  || '#005AA9',
+    roleLabel:       cfg.label  || role,
+    is_active:       u.is_active !== false,
   };
 }
 
@@ -3235,18 +3238,19 @@ async function submitUnscheduledVisit() {
   const errEl       = document.getElementById('usv-error');
   const submitBtn   = document.getElementById('usv-submit-btn');
 
-  // Validate required fields
-  if (!customer)    { errEl.textContent = 'Customer / Site is required.';        errEl.style.display='block'; return; }
-  if (!branch)      { errEl.textContent = 'Branch / Location is required.';      errEl.style.display='block'; return; }
-  if (!description) { errEl.textContent = 'Issue description is required.';      errEl.style.display='block'; return; }
-  if (!reason)      { errEl.textContent = 'Please select a reason.';             errEl.style.display='block'; return; }
+  if (!customer)    { errEl.textContent = 'Customer / Site is required.';   errEl.style.display='block'; return; }
+  if (!branch)      { errEl.textContent = 'Branch / Location is required.'; errEl.style.display='block'; return; }
+  if (!description) { errEl.textContent = 'Issue description is required.'; errEl.style.display='block'; return; }
+  if (!reason)      { errEl.textContent = 'Please select a reason.';        errEl.style.display='block'; return; }
   errEl.style.display = 'none';
 
   submitBtn.disabled    = true;
   submitBtn.textContent = 'Creating…';
 
-  const empNo  = String(currentUser.employeeNo || currentUser.employee_number || '');
-  const region = currentUser.region || null;
+  // Always prefer canonical field names — both are set by dbUserToCurrentUser
+  const empNo    = String(currentUser.employee_number || currentUser.employeeNo || '');
+  const techName = currentUser.full_name || currentUser.name || '';
+  const region   = currentUser.region || null;
 
   const ticket = {
     id:                        nextIdLocal(),
@@ -3259,12 +3263,11 @@ async function submitUnscheduledVisit() {
     equipment,
     description,
     assigned_employee_numbers: [empNo],
-    assigned_names:            [currentUser.name],
+    assigned_names:            [techName],
     assigned_users:            [],
     date:                      new Date().toISOString().split('T')[0],
     createdBy:                 empNo,
     createdAt:                 Date.now(),
-    // Unscheduled flags — stored in visit_data and as top-level for filtering
     is_unscheduled:            true,
     source:                    'technician_self_started',
     approval_required:         true,
@@ -3272,32 +3275,36 @@ async function submitUnscheduledVisit() {
     visitData:                 EMPTY_VISIT(),
   };
 
-  // Optimistically add to local list so technician can start immediately
+  console.log('[UNSCHEDULED] Creating ticket — empNo:', empNo, '| name:', techName);
+
+  // Add locally so technician can start immediately
   tickets.unshift(ticket);
   closeModal('unscheduled-modal');
   renderAll();
 
-  // Persist to Supabase — get a real ticket ID first
+  // Persist to Supabase
   try {
     const realId = await db.nextId();
     const idx = tickets.findIndex(x => x.id === ticket.id);
     if (idx >= 0 && realId) { tickets[idx].id = realId; ticket.id = realId; }
 
     await db.save(ticket);
+    console.log('[UNSCHEDULED] Created ticket id:', ticket.id);
 
-    // Write to ticket_assignments
     await db.updateAssignment(ticket.id, [empNo]);
+    console.log('[UNSCHEDULED] Assignment inserted for employee:', empNo);
 
-    console.log('[Unscheduled] Ticket saved:', ticket.id);
+    // Reload so supervisor views pick up the new ticket + assignment immediately
+    await loadFromSupabase();
+
   } catch(e) {
-    console.error('[Unscheduled] Save failed:', e.message);
+    console.error('[UNSCHEDULED] Save failed:', e.message);
     showToast('⚠️ Saved locally — will sync when online');
   }
 
   submitBtn.disabled    = false;
   submitBtn.textContent = '🆘 Start Visit Now';
 
-  // Jump straight into the active visit for this ticket
   showToast(`🆘 Unscheduled visit started · ${ticket.id}`);
   startTechVisit(ticket.id);
 }
@@ -5041,8 +5048,9 @@ function attachAssignmentsToTickets(ticketList, assignments, users) {
 // Strict role-based filter reading assigned_employee_numbers only.
 function getVisibleTickets(allTickets, user, users) {
   if (!user) return [];
-  const role  = user.role;
-  const empNo = String(user.employeeNo || user.employee_number || '');
+  const role = user.role;
+  // Always use both canonical and legacy field — whichever dbUserToCurrentUser set
+  const empNo = String(user.employee_number || user.employeeNo || '');
 
   if (['admin', 'technical_manager'].includes(role)) return allTickets;
 
@@ -5053,14 +5061,26 @@ function getVisibleTickets(allTickets, user, users) {
   }
 
   if (role === 'regional_supervisor') {
+    console.log('[SUPERVISOR] Current empNo:', empNo);
+
+    // Team = users whose supervisor_id matches this supervisor's employee_number.
+    // supervisor_id is stored as text in the DB — compare as strings.
     const teamEmpNos = users
-      .filter(u => String(u.supervisor_id) === empNo)
+      .filter(u => u.supervisor_id != null && String(u.supervisor_id) === empNo)
       .map(u => String(u.employee_number));
-    return allTickets.filter(t => {
+
+    console.log('[SUPERVISOR] Team members:', teamEmpNos);
+
+    const visible = allTickets.filter(t => {
+      // Tickets created directly by the supervisor
       if (String(t.createdBy) === empNo) return true;
+      // Tickets assigned to any team member
       const assigned = (t.assigned_employee_numbers || []).map(String);
       return assigned.some(id => teamEmpNos.includes(id));
     });
+
+    console.log('[SUPERVISOR] Visible ticket ids:', visible.map(t => t.id));
+    return visible;
   }
 
   return [];
