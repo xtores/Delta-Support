@@ -1359,29 +1359,51 @@ const db = {
     }
   },
 
-  // ── Update assigned_to ──
-  async updateAssignment(ticketId, assignedTo) {
+  // ── Update assignments via ticket_assignments table ──
+  // Deletes existing rows for this ticket then inserts one row per technician.
+  async updateAssignment(ticketId, assignedEmpNos) {
     try {
-      const cleanAssigned = JSON.parse(JSON.stringify(assignedTo || []));
-      const { error } = await supabaseClient
-        .from(TABLE)
-        .update({ assigned_to: cleanAssigned, status: 'assigned', updated_at: new Date().toISOString() })
-        .eq('id', ticketId);
+      const empNos = (assignedEmpNos || []).map(String).filter(Boolean);
 
-      if (error) {
-        console.error('[DB ERROR full]:', error);
-        console.error('[DB ERROR message]:', error?.message);
-        console.error('[DB ERROR details]:', error?.details);
-        console.error('[DB ERROR hint]:', error?.hint);
-        console.error('[DB ERROR code]:', error?.code);
+      // Delete old assignment rows
+      const { error: delErr } = await supabaseClient
+        .from('ticket_assignments')
+        .delete()
+        .eq('ticket_id', ticketId);
+      if (delErr) {
+        console.error('[DB] ticket_assignments delete error:', delErr.message);
         return false;
       }
 
-      saveLocalCache(tickets);
+      // Insert new rows — one per technician
+      if (empNos.length > 0) {
+        const rows = empNos.map(emp => {
+          const u = allUsers.find(u => String(u.employee_number) === emp);
+          return {
+            ticket_id:       ticketId,
+            employee_number: emp,
+            technician_name: u?.full_name || techDisplayName(emp),
+          };
+        });
+        const { error: insErr } = await supabaseClient
+          .from('ticket_assignments')
+          .insert(rows);
+        if (insErr) {
+          console.error('[DB] ticket_assignments insert error:', insErr.message);
+          return false;
+        }
+      }
+
+      // Also update ticket status to 'assigned'
+      await supabaseClient
+        .from(TABLE)
+        .update({ status: 'assigned', updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+
+      console.log('[DB] ticket_assignments updated for', ticketId, '→', empNos);
       return true;
     } catch(e) {
-      console.error('[DB ERROR full]:', e);
-      console.error('[DB ERROR message]:', e?.message);
+      console.error('[DB] updateAssignment exception:', e.message);
       return false;
     }
   },
@@ -1620,10 +1642,9 @@ function ticketToDbRow(t) {
     region:         t.region,
     equipment:      t.equipment   || null,
     description:    t.description || null,
-    assigned_to:    sanitize(t.assignedTo) || [],
     scheduled_date: t.date        || null,
     created_by:     t.createdBy   || null,
-    visit_data:     sanitize(t.visitData),   // deep-sanitize — removes any Headers/Response refs
+    visit_data:     sanitize(t.visitData),
     created_at:     t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
     updated_at:     new Date().toISOString(),
   };
@@ -1640,10 +1661,13 @@ function dbRowToTicket(row) {
     region:      row.region,
     equipment:   row.equipment   || '',
     description: row.description || '',
-    assignedTo:  sanitize(row.assigned_to) || [],
+    // assigned_employee_numbers / assigned_names populated by attachAssignmentsToTickets
+    assigned_employee_numbers: [],
+    assigned_names:            [],
+    assigned_users:            [],
     date:        row.scheduled_date || '',
     createdBy:   row.created_by   || '',
-    visitData:   sanitize(row.visit_data),   // deep-sanitize — plain object only
+    visitData:   sanitize(row.visit_data),
     createdAt:   row.created_at ? new Date(row.created_at).getTime() : Date.now(),
   };
 }
@@ -2078,23 +2102,20 @@ function getSupervisorTeam() {
   };
 }
 
-// ── getSupervisorTickets: full visibility scope for supervisor ──
-// Includes tickets where ANY of these is true:
-//   • same region as supervisor
-//   • created by this supervisor
-//   • assigned to a technician under this supervisor
+// ── getSupervisorTickets: display-layer filter for supervisor pages ────────
+// Used by dashboard, reports, schedule — operates on already-loaded tickets
+// which have assigned_employee_numbers populated by attachAssignmentsToTickets.
 function getSupervisorTickets(allTickets) {
   const team = getSupervisorTeam();
   if (!team) return allTickets;
   return allTickets.filter(t => {
-    // 1. Ticket is in supervisor's region
+    // Region match
     if (String(t.region||'').toLowerCase() === String(team.region||'').toLowerCase()) return true;
-    // 2. Ticket was created by this supervisor
+    // Created by this supervisor
     if (String(t.createdBy) === String(team.myEmpNo)) return true;
-    // 3. Ticket is assigned to one of their technicians
-    const assigned = getAssignedArr(t).map(x => String(x));
-    if (assigned.some(id => team.empNos.includes(id))) return true;
-    return false;
+    // Assigned to one of their technicians
+    const assigned = (t.assigned_employee_numbers || getAssignedArr(t)).map(String);
+    return assigned.some(id => team.empNos.includes(id));
   });
 }
 
@@ -2443,14 +2464,14 @@ function saveTickets(arr) {
 }
 // ── SEED TICKETS (used only if DB is offline and cache is empty) ──
 const SEED_TICKETS = [
-  { id:'TKT-0047', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Sarah Al-Rashid', branch:'Operation Team',  region:'east',    equipment:'Treadmill — Life Fitness T5',      description:'Belt worn causing slippage.',        assignedTo:['5304'],              date:'2026-04-15', createdBy:'1003', createdAt:Date.now()-3600000 },
-  { id:'TKT-0046', type:'installation', status:'assigned',    priority:'normal', customer:'Khalid Ibrahim',  branch:'Consumer Team',   region:'central', equipment:'Squat Rack × 4 — Hammer Strength', description:'New equipment installation.',        assignedTo:['5304','3152','6597'], date:'2026-04-16', createdBy:'1001', createdAt:Date.now()-7200000 },
-  { id:'TKT-0045', type:'spare-parts',  status:'on-hold',     priority:'urgent', customer:'Fatima Hassan',   branch:'Operation Team',  region:'east',    equipment:'Elliptical — Precor EFX 885',      description:'Console board failure.',            assignedTo:['3152'],              date:'2026-04-14', createdBy:'1002', createdAt:Date.now()-86400000 },
-  { id:'TKT-0044', type:'amc',          status:'new',         priority:'normal', customer:'Omar Al-Sayed',   branch:'Sales Team',      region:'west',    equipment:'Full Gym — AMC Renewal',           description:'Annual contract renewal.',          assignedTo:['6635'],              date:'2026-04-18', createdBy:'1003', createdAt:Date.now()-172800000 },
-  { id:'TKT-0043', type:'maintenance',  status:'completed',   priority:'normal', customer:'Nora Abdullah',   branch:'Consumer Team',   region:'central', equipment:'Cable Machine — Cybex VR3',        description:'Quarterly PM service completed.',   assignedTo:['6597'],              date:'2026-04-12', createdBy:'1001', createdAt:Date.now()-259200000 },
-  { id:'TKT-0041', type:'installation', status:'on-hold',     priority:'urgent', customer:'Ahmed Fouad',     branch:'Operation Team',  region:'east',    equipment:'Treadmill Bank × 8 — NordicTrack', description:'SLA breached — awaiting site prep.',assignedTo:['5304','6632','6639'], date:'2026-04-10', createdBy:'1003', createdAt:Date.now()-345600000 },
-  { id:'TKT-0039', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Layla Mustafa',   branch:'Consumer Team',   region:'east',    equipment:'Rowing Machines × 6 — Concept2',  description:'Bearing replacement needed.',       assignedTo:['6887','6888'],       date:'2026-04-15', createdBy:'1002', createdAt:Date.now()-432000000 },
-  { id:'TKT-0036', type:'amc',          status:'completed',   priority:'normal', customer:'Hassan Khalil',   branch:'Sales Team',      region:'east',    equipment:'Cardio Zone — Full AMC',           description:'AMC activation completed.',         assignedTo:['6889'],              date:'2026-04-08', createdBy:'1001', createdAt:Date.now()-518400000 },
+  { id:'TKT-0047', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Sarah Al-Rashid', branch:'Operation Team',  region:'east',    equipment:'Treadmill — Life Fitness T5',      description:'Belt worn causing slippage.',        assigned_employee_numbers:['5304'],              assigned_names:['Naser Shah Khan'],  date:'2026-04-15', createdBy:'1003', createdAt:Date.now()-3600000 },
+  { id:'TKT-0046', type:'installation', status:'assigned',    priority:'normal', customer:'Khalid Ibrahim',  branch:'Consumer Team',   region:'central', equipment:'Squat Rack × 4 — Hammer Strength', description:'New equipment installation.',        assigned_employee_numbers:['5304','3152','6597'], assigned_names:['Naser Shah Khan','Sandro','Jose'], date:'2026-04-16', createdBy:'1001', createdAt:Date.now()-7200000 },
+  { id:'TKT-0045', type:'spare-parts',  status:'on-hold',     priority:'urgent', customer:'Fatima Hassan',   branch:'Operation Team',  region:'east',    equipment:'Elliptical — Precor EFX 885',      description:'Console board failure.',            assigned_employee_numbers:['3152'],              assigned_names:['Sandro'],           date:'2026-04-14', createdBy:'1002', createdAt:Date.now()-86400000 },
+  { id:'TKT-0044', type:'amc',          status:'new',         priority:'normal', customer:'Omar Al-Sayed',   branch:'Sales Team',      region:'west',    equipment:'Full Gym — AMC Renewal',           description:'Annual contract renewal.',          assigned_employee_numbers:['6635'],              assigned_names:['Belly Bellen'],     date:'2026-04-18', createdBy:'1003', createdAt:Date.now()-172800000 },
+  { id:'TKT-0043', type:'maintenance',  status:'completed',   priority:'normal', customer:'Nora Abdullah',   branch:'Consumer Team',   region:'central', equipment:'Cable Machine — Cybex VR3',        description:'Quarterly PM service completed.',   assigned_employee_numbers:['6597'],              assigned_names:['Jose'],             date:'2026-04-12', createdBy:'1001', createdAt:Date.now()-259200000 },
+  { id:'TKT-0041', type:'installation', status:'on-hold',     priority:'urgent', customer:'Ahmed Fouad',     branch:'Operation Team',  region:'east',    equipment:'Treadmill Bank × 8 — NordicTrack', description:'SLA breached — awaiting site prep.',assigned_employee_numbers:['5304','6632','6639'], assigned_names:['Naser Shah Khan','Limuel Rivero','Kenneth'], date:'2026-04-10', createdBy:'1003', createdAt:Date.now()-345600000 },
+  { id:'TKT-0039', type:'maintenance',  status:'in-progress', priority:'high',   customer:'Layla Mustafa',   branch:'Consumer Team',   region:'east',    equipment:'Rowing Machines × 6 — Concept2',  description:'Bearing replacement needed.',       assigned_employee_numbers:['6887','6888'],        assigned_names:['Mamerto Jr','Joan B. Pajarito'], date:'2026-04-15', createdBy:'1002', createdAt:Date.now()-432000000 },
+  { id:'TKT-0036', type:'amc',          status:'completed',   priority:'normal', customer:'Hassan Khalil',   branch:'Sales Team',      region:'east',    equipment:'Cardio Zone — Full AMC',           description:'AMC activation completed.',         assigned_employee_numbers:['6889'],              assigned_names:['Al Jhon V Torres'], date:'2026-04-08', createdBy:'1001', createdAt:Date.now()-518400000 },
 ];
 
 // ── APP STATE ──
@@ -2877,22 +2898,33 @@ function getFilteredTickets() {
 
 // ── Multi-tech display helpers ──
 // Normalise: always return array of employee numbers
+// ── getAssignedArr ─────────────────────────────────────────────────────────
+// Returns array of employee_number strings for a ticket.
+// Source of truth: t.assigned_employee_numbers (from ticket_assignments join).
+// Falls back to legacy t.assignedTo only if assignments not yet loaded.
 function getAssignedArr(t) {
-  if (Array.isArray(t.assignedTo)) return t.assignedTo;
-  if (t.technician) return [t.technician]; // legacy single string
+  if (Array.isArray(t.assigned_employee_numbers) && t.assigned_employee_numbers.length > 0)
+    return t.assigned_employee_numbers.map(String);
+  if (Array.isArray(t.assignedTo) && t.assignedTo.length > 0)
+    return t.assignedTo.map(String);
+  if (t.technician) return [String(t.technician)];
   return [];
 }
+
 // Short display label: "Naser Shah Khan" or "Naser Shah Khan + 2 more"
 function techLabel(t, max=1) {
-  const arr = getAssignedArr(t);
-  if (!arr.length) return 'Unassigned';
-  const names = arr.map(id => techDisplayName(id));
+  // Prefer pre-built assigned_names from ticket_assignments join
+  const names = Array.isArray(t.assigned_names) && t.assigned_names.length
+    ? t.assigned_names
+    : getAssignedArr(t).map(id => techDisplayName(id));
+  if (!names.length) return 'Unassigned';
   if (names.length <= max) return names.join(', ');
-  return names.slice(0,max).join(', ') + ` +${names.length-max} more`;
+  return names.slice(0, max).join(', ') + ` +${names.length - max} more`;
 }
+
 // Avatar stack HTML
 function techAvatarStack(t, maxShow=3) {
-  const arr = getAssignedArr(t);
+  const arr  = getAssignedArr(t);
   const show = arr.slice(0, maxShow);
   const extra = arr.length - maxShow;
   let html = show.map(id => {
@@ -4513,25 +4545,28 @@ function saveDetailReassign(id) {
   const selected = [...document.querySelectorAll('#detail-tech-list input[type=checkbox]:checked')].map(cb=>cb.value);
   if (!selected.length) { showToast('Please select at least one technician'); return; }
 
-  // ── Regional Supervisor: validate selection is within their team ──
+  // Regional Supervisor: validate within their team
   if (currentUser?.role === 'regional_supervisor') {
     const team = getSupervisorTeam();
     if (team) {
       const invalid = selected.some(id => !team.empNos.includes(String(id)));
-      if (invalid) {
-        showToast('⛔ You can only assign technicians under your supervision');
-        return;
-      }
+      if (invalid) { showToast('⛔ You can only assign technicians under your supervision'); return; }
     }
   }
 
-  t.assignedTo = selected;
+  // Update in-memory ticket immediately
+  t.assigned_employee_numbers = selected.map(String);
+  t.assigned_names = selected.map(e => techDisplayName(e));
   t.status = 'assigned';
   renderAll();
-  const names = selected.map(e=>techDisplayName(e)).join(', ');
-  showToast(`${id} assigned to ${names}`);
+  showToast(`${id} assigned to ${t.assigned_names.join(', ')}`);
   openDetail(id);
-  db.updateAssignment(id, selected);
+
+  // Persist to ticket_assignments then reload fresh data
+  db.updateAssignment(id, selected).then(ok => {
+    if (ok) loadFromSupabase();
+    else showToast('⚠️ Assignment save failed');
+  });
 }
 
 function changeStatus(id, s, btn) {
@@ -4542,23 +4577,33 @@ function changeStatus(id, s, btn) {
   if(btn){btn.classList.add('sel');btn.style.cssText=sStyle[s]||'';}
   renderAll();
   showToast(`${id} → ${s.replace('-',' ')}`);
-  // Persist to Supabase
   db.updateStatus(id, s);
 }
 
 function reassignTech(id, empNo) {
-  const t = tickets.find(x=>x.id===id);
-  if(t){ t.assignedTo=[empNo]; renderAll(); showToast(`Assigned to ${techDisplayName(empNo)}`); db.updateAssignment(id,[empNo]); }
+  const t = tickets.find(x=>x.id===id); if (!t) return;
+  t.assigned_employee_numbers = [String(empNo)];
+  t.assigned_names = [techDisplayName(empNo)];
+  t.status = 'assigned';
+  renderAll();
+  showToast(`Assigned to ${techDisplayName(empNo)}`);
+  db.updateAssignment(id, [empNo]).then(ok => {
+    if (ok) loadFromSupabase();
+  });
 }
 
 function quickAssign(id) {
   const t = tickets.find(x=>x.id===id); if(!t) return;
   const empNo = autoAssign();
+  if (!empNo) { showToast('No technicians available'); return; }
+  t.assigned_employee_numbers = [String(empNo)];
+  t.assigned_names = [techDisplayName(empNo)];
   t.status = 'assigned';
-  t.assignedTo = [empNo];
   renderAll();
   showToast(`${id} assigned to ${techDisplayName(empNo)}`);
-  db.updateAssignment(id, [empNo]);
+  db.updateAssignment(id, [empNo]).then(ok => {
+    if (ok) loadFromSupabase();
+  });
 }
 
 function autoAssign() {
@@ -4589,12 +4634,15 @@ function submitCreateRequest() {
   if(!branch)  { errEl.textContent='Please select a team.';    errEl.style.display='block'; return; }
   errEl.style.display = 'none';
   const type = document.querySelector('#page-create-request .type-btn.sel')?.dataset.type||'maintenance';
+  const autoEmp = autoAssign();
   const t = {
     id: nextIdLocal(), type, status:'new', priority: document.getElementById('cr-priority').value,
     customer, branch, region: document.getElementById('cr-region').value,
-    equipment:   document.getElementById('cr-equipment').value.trim() || 'Equipment TBD',
-    description: document.getElementById('cr-description').value.trim(),
-    assignedTo:  [autoAssign()],
+    equipment:                 document.getElementById('cr-equipment').value.trim() || 'Equipment TBD',
+    description:               document.getElementById('cr-description').value.trim(),
+    assigned_employee_numbers: autoEmp ? [String(autoEmp)] : [],
+    assigned_names:            autoEmp ? [techDisplayName(autoEmp)] : [],
+    assigned_users:            [],
     date:        document.getElementById('cr-date').value || new Date().toISOString().split('T')[0],
     createdBy:   currentUser.id, createdAt: Date.now(),
   };
@@ -4694,18 +4742,19 @@ function submitNewTicket() {
 
   const t = {
     id: nextIdLocal(), type, status,
-    priority:      document.getElementById('f-priority').value,
+    priority:                    document.getElementById('f-priority').value,
     customer, branch,
-    region:        ticketRegion,
-    equipment:     document.getElementById('f-equipment').value.trim() || 'Equipment TBD',
-    serial:        document.getElementById('f-serial')?.value.trim()   || '',
-    contactPerson: document.getElementById('f-contact')?.value.trim()  || '',
-    phone:         document.getElementById('f-phone')?.value.trim()    || '',
-    description:   document.getElementById('f-description').value.trim(),
-    assignedTo:    selectedTechs,
-    date:          document.getElementById('f-date').value || new Date().toISOString().split('T')[0],
-    createdBy:     ticketCreatedBy,
-    createdAt:     Date.now(),
+    region:                      ticketRegion,
+    equipment:                   document.getElementById('f-equipment').value.trim() || 'Equipment TBD',
+    serial:                      document.getElementById('f-serial')?.value.trim()   || '',
+    contactPerson:               document.getElementById('f-contact')?.value.trim()  || '',
+    phone:                       document.getElementById('f-phone')?.value.trim()    || '',
+    description:                 document.getElementById('f-description').value.trim(),
+    assigned_employee_numbers:   selectedTechs.map(String),
+    assigned_names:              selectedTechs.map(e => techDisplayName(e)),
+    date:                        document.getElementById('f-date').value || new Date().toISOString().split('T')[0],
+    createdBy:                   ticketCreatedBy,
+    createdAt:                   Date.now(),
   };
 
   tickets.unshift(t);
@@ -4713,15 +4762,18 @@ function submitNewTicket() {
   resetForm();
   renderAll();
   const msg = selectedTechs.length
-    ? `✅ ${t.id} created · Assigned to ${selectedTechs.map(e=>techDisplayName(e)).join(', ')}`
+    ? `✅ ${t.id} created · Assigned to ${t.assigned_names.join(', ')}`
     : `✅ ${t.id} created · Awaiting assignment`;
   showToast(msg);
   setTimeout(()=>goPage('tickets'),300);
   db.nextId().then(realId => {
     const idx = tickets.findIndex(x=>x.id===t.id);
     if(idx>=0 && realId){ tickets[idx].id=realId; t.id=realId; }
-    db.save(t).then(() => {
-      // Refresh from DB so dashboard reflects the new ticket immediately
+    db.save(t).then(async () => {
+      // Write assignments to ticket_assignments table
+      if (selectedTechs.length > 0) {
+        await db.updateAssignment(t.id, selectedTechs);
+      }
       loadFromSupabase();
     });
   });
@@ -4776,39 +4828,70 @@ async function clearAllData() {
 // ── getVisibleTickets ─────────────────────────────────────────────────────
 // Strict role-based ticket filtering applied after fetching all tickets.
 // allUsers must already be loaded (called in loadFromSupabase after user fetch).
+// ── groupAssignmentsByTicket ───────────────────────────────────────────────
+// Converts flat ticket_assignments rows into a map keyed by ticket_id.
+function groupAssignmentsByTicket(assignments) {
+  const map = {};
+  for (const row of assignments) {
+    const tid = String(row.ticket_id);
+    if (!map[tid]) map[tid] = { empNos: [], names: [] };
+    const emp = String(row.employee_number);
+    if (!map[tid].empNos.includes(emp)) {
+      map[tid].empNos.push(emp);
+      map[tid].names.push(row.technician_name || techDisplayName(emp));
+    }
+  }
+  return map;
+}
+
+// ── attachAssignmentsToTickets ─────────────────────────────────────────────
+// Merges grouped assignments onto each ticket.
+// Adds: assigned_employee_numbers, assigned_names, assigned_users
+function attachAssignmentsToTickets(ticketList, assignments, users) {
+  const grouped = groupAssignmentsByTicket(assignments);
+  return ticketList.map(t => {
+    const g = grouped[String(t.id)] || { empNos: [], names: [] };
+    const assignedUsers = g.empNos.map(emp =>
+      users.find(u => String(u.employee_number) === emp) || null
+    ).filter(Boolean);
+    return {
+      ...t,
+      assigned_employee_numbers: g.empNos,
+      assigned_names:            g.names,
+      assigned_users:            assignedUsers,
+    };
+  });
+}
+
+// ── getVisibleTickets ──────────────────────────────────────────────────────
+// Strict role-based filter reading assigned_employee_numbers only.
 function getVisibleTickets(allTickets, user, users) {
   if (!user) return [];
   const role  = user.role;
   const empNo = String(user.employeeNo || user.employee_number || '');
 
-  // Admin / Technical Manager — full access
   if (['admin', 'technical_manager'].includes(role)) return allTickets;
 
-  // Technician / Senior Technician — only tickets assigned to them
   if (['technician', 'senior_technician'].includes(role)) {
-    return allTickets.filter(t => {
-      const assigned = getAssignedArr(t).map(x => String(x));
-      return assigned.includes(empNo);
-    });
+    return allTickets.filter(t =>
+      (t.assigned_employee_numbers || []).map(String).includes(empNo)
+    );
   }
 
-  // Regional Supervisor — tickets assigned to any direct team member
-  // Team = all users whose supervisor_id === this supervisor's employee_number
   if (role === 'regional_supervisor') {
-    const teamIds = users
+    const teamEmpNos = users
       .filter(u => String(u.supervisor_id) === empNo)
       .map(u => String(u.employee_number));
-
-    // Also include tickets the supervisor themselves created
     return allTickets.filter(t => {
       if (String(t.createdBy) === empNo) return true;
-      const assigned = getAssignedArr(t).map(x => String(x));
-      return assigned.some(id => teamIds.includes(id));
+      const assigned = (t.assigned_employee_numbers || []).map(String);
+      return assigned.some(id => teamEmpNos.includes(id));
     });
   }
 
   return [];
 }
+
 
 // ── savePendingSync ───────────────────────────────────────────────────────
 // Saves a failed checklist/visit save to localStorage so it can be retried.
@@ -4849,29 +4932,45 @@ async function retryPendingSync() {
 
 async function loadFromSupabase() {
   showDbLoading('Loading tickets…');
-  console.log('[DB] Loading tickets from Supabase…');
+  console.log('[DB] Loading tickets + assignments from Supabase…');
 
-  // ── 1. Ensure allUsers is populated for team filtering ──
+  // ── 1. Ensure allUsers populated ──────────────────────────────────────────
   if (allUsers.length === 0) {
     try { await loadUsersFromDB(); } catch(e) {
       console.warn('[DB] Could not load users:', e.message);
     }
   }
 
-  // ── 2. Fetch all tickets from Supabase ──
-  const dbTickets = await db.load();
-  hideDbLoading();
+  // ── 2. Fetch tickets and ticket_assignments in parallel ───────────────────
+  let rawTickets = [], rawAssignments = [];
+  try {
+    const [ticketRes, assignRes] = await Promise.all([
+      supabaseClient
+        .from(TABLE)
+        .select('id, type, status, priority, customer, branch, region, equipment, description, scheduled_date, visit_data, created_by, created_at')
+        .order('created_at', { ascending: false }),
+      supabaseClient
+        .from('ticket_assignments')
+        .select('ticket_id, employee_number, technician_name'),
+    ]);
 
-  if (dbTickets === null) {
-    console.warn('[DB] Load returned null — using local cache (offline)');
+    if (ticketRes.error)  throw ticketRes.error;
+    if (assignRes.error)  console.warn('[DB] ticket_assignments error:', assignRes.error.message);
+
+    rawTickets     = ticketRes.data  || [];
+    rawAssignments = assignRes.data  || [];
+
+  } catch(e) {
+    hideDbLoading();
+    console.warn('[DB] Load failed — using local cache:', e.message);
     showToast('⚠️ Offline — showing cached data');
     return;
   }
 
-  console.log('[DB] Fetched', dbTickets.length, 'total tickets');
+  hideDbLoading();
+  console.log('[DB] Tickets:', rawTickets.length, '| Assignments:', rawAssignments.length);
 
-  // ── 3. Seed sample data on very first run ──
-  let rawTickets = dbTickets;
+  // ── 3. Seed sample data on first run ──────────────────────────────────────
   if (rawTickets.length === 0 && SEED_TICKETS.length > 0) {
     showDbLoading('First run — seeding sample data…');
     for (const t of SEED_TICKETS) { await db.save(t); }
@@ -4880,12 +4979,17 @@ async function loadFromSupabase() {
     console.log('[DB] Seeded', rawTickets.length, 'sample ticket(s)');
   }
 
-  // ── 4. Apply role-based visibility filter ──
-  const visible = getVisibleTickets(rawTickets, currentUser, allUsers);
-  console.log('[DB] Visible after role filter:', visible.length,
-    '(role:', currentUser?.role, ')');
+  // ── 4. Map DB rows → ticket objects ───────────────────────────────────────
+  const mapped = rawTickets.map(row => dbRowToTicket(row));
 
-  // ── 5. Store and render ──
+  // ── 5. Attach assignments (source of truth) ───────────────────────────────
+  const withAssignments = attachAssignmentsToTickets(mapped, rawAssignments, allUsers);
+
+  // ── 6. Role-based visibility filter ──────────────────────────────────────
+  const visible = getVisibleTickets(withAssignments, currentUser, allUsers);
+  console.log('[DB] Visible after role filter:', visible.length, '(role:', currentUser?.role, ')');
+
+  // ── 7. Store and render ───────────────────────────────────────────────────
   tickets = JSON.parse(JSON.stringify(visible));
   saveLocalCache(tickets);
   renderAll();
