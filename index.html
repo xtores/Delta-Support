@@ -583,10 +583,6 @@ body.app-active{padding-bottom:var(--bnav);}
         Log In →
       </button>
 
-      <!-- ── DEV BYPASS — remove before production ── -->
-      <button onclick="devBypassLogin()" style="margin-top:10px;width:100%;padding:10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">
-        ⚡ Bypass Login (Dev)
-      </button>
       <div style="margin-top:18px;text-align:center;font-size:10px;color:var(--muted);letter-spacing:.5px;">
         Build: 2026-04-21-01
       </div>
@@ -1467,12 +1463,17 @@ const storage = {
         .upload(filePath, file, { upsert: true, contentType });
 
       if (uploadError) {
-        console.error('[Storage ERROR full]:', uploadError);
-        console.error('[Storage ERROR message]:', uploadError?.message);
-        console.error('[Storage ERROR details]:', uploadError?.details);
-        console.error('[Storage ERROR status]:', uploadError?.statusCode || uploadError?.status);
-        console.error('[Storage ERROR bucket]:', bucket);
-        console.error('[Storage ERROR path]:', filePath);
+        console.error('[Storage] Upload error full:', uploadError);
+        console.error('[Storage] Upload error message:', uploadError?.message);
+        console.error('[Storage] Upload error details:', uploadError?.details);
+        console.error('[Storage] Upload error hint:', uploadError?.hint);
+        console.error('[Storage] Upload error code:', uploadError?.error || uploadError?.code || uploadError?.statusCode);
+        console.error('[Storage] Upload bucket/path:', bucket, filePath);
+        console.error('[Storage] Upload file info:', {
+          name: file?.name,
+          type: file?.type,
+          size: file?.size,
+        });
         const msg = uploadError?.message || 'Storage upload failed';
         return { url: null, error: msg };
       }
@@ -1497,8 +1498,9 @@ const storage = {
       return { url: publicUrl, error: null };
 
     } catch(e) {
-      console.error('[Storage ERROR full]:', e);
-      console.error('[Storage ERROR message]:', e?.message);
+      console.error('[Storage] Unexpected error full:', e);
+      console.error('[Storage] Unexpected error message:', e?.message);
+      console.error('[Storage] Unexpected error stack:', e?.stack);
       return { url: null, error: e?.message || 'Unexpected storage error' };
     }
   },
@@ -1773,6 +1775,35 @@ const nonTechUsers = [
 //   CREATE POLICY "anon_all" ON users FOR ALL TO anon USING (true) WITH CHECK (true);
 // ══════════════════════════════════════════════════════════════
 const USERS_TABLE = 'users';
+
+// ── hashPassword: SHA-256 via Web Crypto (built into every modern browser) ──
+// Returns a 64-char hex string. Used for both storing and verifying passwords.
+// Fallback: if SubtleCrypto is unavailable (very old browsers), returns the
+// plain string prefixed with "plain:" so existing accounts still work.
+async function hashPassword(plain) {
+  if (!plain) return '';
+  try {
+    const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(plain));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch(e) {
+    console.warn('[hashPassword] SubtleCrypto unavailable, using plain fallback:', e.message);
+    return 'plain:' + plain;
+  }
+}
+
+// ── verifyPassword: compares entered password against stored hash or plain ──
+// Supports both hashed (64-char hex) and legacy plaintext (for migration).
+async function verifyPassword(entered, stored) {
+  if (!stored) return false;
+  // Legacy plaintext stored with prefix
+  if (stored.startsWith('plain:')) return stored.slice(6) === entered;
+  // Legacy plaintext without prefix (existing users before hashing was added)
+  // A SHA-256 hex is always exactly 64 chars. Anything shorter is legacy plain.
+  if (stored.length < 64) return stored === entered;
+  // Hashed — hash the entered value and compare
+  const hashed = await hashPassword(entered);
+  return hashed === stored;
+}
 
 // In-memory user registry (loaded from Supabase + seeded from technicianAccounts as fallback)
 let allUsers = [];
@@ -2121,9 +2152,11 @@ async function doLogin() {
     return fail('⛔ This account is disabled. Contact your administrator.');
   }
 
-  console.log('[LOGIN] Password check — stored:', String(found.password), '| entered:', String(password), '| match:', String(found.password) === String(password));
+  // verifyPassword handles hashed (SHA-256) and legacy plaintext automatically
+  const passwordOk = await verifyPassword(password, found.password);
+  console.log('[LOGIN] Password verified:', passwordOk);
 
-  if (String(found.password) !== String(password)) {
+  if (!passwordOk) {
     pwdEl.value = ''; pwdEl.focus();
     return fail('⛔ Wrong password. Please try again.');
   }
@@ -2169,35 +2202,6 @@ async function doLogin() {
     btn.textContent    = 'Log In →';
   }
 }
-
-// ── DEV BYPASS — remove before production ──────────────────────────────────
-function devBypassLogin() {
-  const mockRaw = {
-    employee_number: 1000,
-    username:  'manager1',
-    full_name: 'Technical Manager',
-    role:      'Technical Manager',
-    region:    'east',
-    is_active: true,
-    color:     '#d97706'
-  };
-  currentUser = typeof dbUserToCurrentUser === 'function'
-    ? dbUserToCurrentUser(mockRaw)
-    : {
-        employeeNo: '1000', employee_number: 1000, id: '1000',
-        username: 'manager1', name: 'Technical Manager',
-        full_name: 'Technical Manager', role: 'Technical Manager',
-        region: 'east', color: '#d97706', avatar: 'TM', roleLabel: 'Technical Manager'
-      };
-  window.currentUser = currentUser;
-  localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: 1000 }));
-  localStorage.setItem('currentUser', JSON.stringify(mockRaw));
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app-shell').classList.add('visible');
-  document.body.classList.add('app-active');
-  bootApp();
-}
-// ── END DEV BYPASS ──────────────────────────────────────────────────────────
 
 function doLogout() {
   localStorage.removeItem(SESSION_KEY);
@@ -2517,7 +2521,20 @@ function bootApp() {
 
   // Render with cached data immediately, then load fresh from Supabase
   renderAll();
+  // Load tickets and users in parallel — users must be loaded so supervisor
+  // team filtering works from the very first render after login.
   loadFromSupabase();
+  loadUsersFromDB().then(() => {
+    // Re-render after users arrive so supervisor dashboard/chips reflect real team
+    if (currentUser?.role === 'regional_supervisor') {
+      // Remove stale filter chips so they are rebuilt with correct team
+      const stale = document.getElementById('dash-filter-chips');
+      if (stale) stale.remove();
+      renderAll();
+      populateTechCheckboxes('f-tech-list');
+    }
+    console.log('[Boot] allUsers loaded:', allUsers.length, 'users');
+  }).catch(e => console.warn('[Boot] loadUsersFromDB failed:', e.message));
 }
 
 function buildMenu(cfg) {
@@ -2659,9 +2676,12 @@ function renderDashboard() {
       <div class="kpi-card c-purple"><div class="kpi-top"><div class="kpi-icon c-purple">👷</div></div><div class="kpi-value">${ss.assigned}</div><div class="kpi-label">Assigned</div></div>
       <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">✅</div></div><div class="kpi-value">${ss.completed}</div><div class="kpi-label">Completed</div></div>
       <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⏸</div></div><div class="kpi-value">${ss.onHold}</div><div class="kpi-label">On Hold</div></div>`;
-    // ── Branch / Tech quick-filter chips ──
+    // ── Branch / Tech quick-filter chips — rebuilt each render ──
     const dashChartsWrap = document.getElementById('dash-charts');
-    if (dashChartsWrap && !document.getElementById('dash-filter-chips')) {
+    if (dashChartsWrap) {
+      // Remove any previous chips so they're always fresh (supervisor team may have changed)
+      const old = document.getElementById('dash-filter-chips');
+      if (old) old.remove();
       const filterDiv = document.createElement('div');
       filterDiv.id = 'dash-filter-chips';
       filterDiv.style.cssText = 'padding:0 14px 4px;display:flex;flex-direction:column;gap:8px;margin-top:8px;';
@@ -3417,23 +3437,38 @@ function openChecklistModal(key) {
 //         plain URL string arrays after savePhotos() completes.
 // ══════════════════════════════════════════════════
 
+// ── handlePhotoUpload ──────────────────────────────────────────────────────
+// Converts each selected File to a base64 dataUrl immediately using FileReader.
+// This means the photo data survives JSON serialization, renderAll(), and any
+// state save — no File objects stored, no blob URLs needed, no hasPendingFiles guard.
 function handlePhotoUpload(event) {
   const files = Array.from(event.target.files);
   if (!files.length) return;
   const vd  = activeVisit();
   const arr = currentPhotoType === 'before' ? vd.beforePhotos : vd.afterPhotos;
+
+  let loaded = 0;
   files.forEach(file => {
-    arr.push({
-      previewUrl: URL.createObjectURL(file),
-      storageUrl: null,
-      name:       file.name,
-      file:       file,
-    });
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const dataUrl = e.target.result;           // "data:image/jpeg;base64,..."
+      arr.push({
+        dataUrl,                                  // serialization-safe — no File object
+        previewUrl: dataUrl,                      // used for <img> preview
+        name:       file.name,
+        storageUrl: null,
+      });
+      loaded++;
+      console.log(`[handlePhotoUpload] Converted ${file.name} to dataUrl (${loaded}/${files.length})`);
+      renderPhotoGrid();
+    };
+    reader.onerror = function(err) {
+      console.error('[handlePhotoUpload] FileReader error for', file.name, err);
+    };
+    reader.readAsDataURL(file);
   });
-  console.log('[handlePhotoUpload] Added files:', files.length, 'type:', currentPhotoType);
-  console.log('[handlePhotoUpload] Current array length:', arr.length, arr);
-  renderPhotoGrid();
-  event.target.value = '';
+
+  event.target.value = '';    // reset input so same file can be re-selected
 }
 
 function renderPhotoGrid() {
@@ -3483,9 +3518,7 @@ async function savePhotos() {
   if (!count) { showToast('Please add at least one photo'); return; }
 
   console.log(`[savePhotos] Starting: ${count} photo(s) → bucket '${bucket}' for ticket ${activeTechJobId}`);
-  console.log('[savePhotos] Raw array before upload:', arr.map((p, i) =>
-    typeof p === 'string' ? `[${i}] URL:${p}` : `[${i}] {name:${p?.name}, hasFile:${!!(p?.file instanceof File)}, storageUrl:${p?.storageUrl||null}}`
-  ));
+  console.log('[savePhotos] Raw array before upload:', arr);
 
   const saveBtn = document.querySelector('#photos-modal .btn-p');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
@@ -3520,20 +3553,57 @@ async function savePhotos() {
     const filePath = `${activeTechJobId}/${Date.now()}-${safeName}`;
     let   result   = { url: null, error: 'No uploadable source found' };
 
+    // ── Log full entry state so we can see exactly what survived ──
+    console.log(`[savePhotos] [${i}] Entry state:`, {
+      name:          p.name,
+      hasFile:       p.file instanceof File,
+      fileType:      p.file?.type,
+      fileSize:      p.file?.size,
+      hasDataUrl:    typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:'),
+      previewIsBlob: typeof p.previewUrl === 'string' && p.previewUrl.startsWith('blob:'),
+      previewIsData: typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:'),
+    });
+
     if (p.file instanceof File) {
-      console.log(`[savePhotos] [${i}] Uploading File object: ${p.name}, size: ${p.file.size}, type: ${p.file.type}`);
+      // ── Best path: File object is still alive in memory ──
+      console.log(`[savePhotos] [${i}] Uploading File: ${p.name}, size: ${p.file.size}, type: ${p.file.type}`);
       result = await storage.uploadFile(bucket, filePath, p.file);
+
     } else if (typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:')) {
+      // ── dataUrl was stored (e.g. from camera capture) ──
       console.log(`[savePhotos] [${i}] Uploading dataUrl: ${p.name}`);
       result = await storage.uploadDataUrl(bucket, filePath, p.dataUrl);
+
     } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('data:')) {
+      // ── previewUrl is a data: URI (not blob:) ──
       console.log(`[savePhotos] [${i}] Uploading previewUrl as data: ${p.name}`);
       result = await storage.uploadDataUrl(bucket, filePath, p.previewUrl);
+
+    } else if (typeof p.previewUrl === 'string' && p.previewUrl.startsWith('blob:')) {
+      // ── blob: URL is still alive — fetch it as a Blob and upload ──
+      console.log(`[savePhotos] [${i}] Fetching blob URL and uploading: ${p.name}`);
+      try {
+        const fetchResp = await fetch(p.previewUrl);
+        if (!fetchResp.ok) throw new Error('Blob fetch failed: ' + fetchResp.status);
+        const blob = await fetchResp.blob();
+        const mime = blob.type || 'image/jpeg';
+        const ext  = mime.includes('png') ? '.png' : '.jpg';
+        const blobFile = new File([blob], safeName.replace(/\.[^.]+$/, ext), { type: mime });
+        console.log(`[savePhotos] [${i}] Blob fetched OK — size: ${blob.size}, type: ${mime}`);
+        result = await storage.uploadFile(bucket, filePath, blobFile);
+      } catch(blobErr) {
+        console.error(`[savePhotos] [${i}] Blob fetch failed:`, blobErr.message);
+        result = { url: null, error: 'Blob fetch failed: ' + blobErr.message };
+      }
+
     } else {
+      // ── Nothing uploadable — log everything for debugging ──
       console.error('[savePhotos] Upload failed for entry:', p);
       console.error('[savePhotos] Bucket:', bucket);
       console.error('[savePhotos] Ticket:', activeTechJobId);
-      console.error('[savePhotos] Reason: no File, dataUrl, or data previewUrl available');
+      console.error('[savePhotos] Reason: no File, dataUrl, blob URL, or data previewUrl available');
+      console.error('[savePhotos] Full entry object keys:', Object.keys(p));
+      result = { url: null, error: 'No uploadable source (File may have been garbage collected)' };
     }
 
     if (result.url) {
@@ -3550,19 +3620,20 @@ async function savePhotos() {
     }
   }
 
-  console.log('[savePhotos] Raw array after upload loop:', arr);
+  console.log('[savePhotos] Raw array after upload:', arr);
 
   // ── Build successUrls from plain strings only ──
   const successUrls = arr.filter(p => typeof p === 'string' && p.startsWith('http'));
+  const uploadedCount = successUrls.length;
 
-  console.log('[savePhotos] successUrls:', successUrls);
+  console.log('[savePhotos] Final plain URL strings:', successUrls);
 
   // ── If ZERO uploads succeeded — keep modal open, show real reason ──
-  if (successUrls.length === 0) {
+  if (uploadedCount === 0) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
     const firstReason = failedReasons[0] || 'Upload failed — check Supabase Storage RLS policies for this bucket';
     console.error('[savePhotos] All uploads failed. Reasons:', failedReasons);
-    showToast('Photo upload failed: ' + firstReason);
+    showToast('⚠️ Photo upload failed');
     // Restore arr to original pending objects (strip _failed marker)
     const originals = arr.filter(p => typeof p === 'object' && p !== null).map(p => {
       const { _failed, _failReason, ...rest } = p;
@@ -3608,7 +3679,10 @@ async function savePhotos() {
   if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Photos'; }
   closeModal('photos-modal');
   syncChecklistUI(vd);
-  showToast(`✅ ${successUrls.length}/${count} photo${count!==1?'s':''} uploaded`);
+  // Only show success toast when at least one photo was uploaded
+  if (uploadedCount > 0) {
+    showToast(`✅ ${uploadedCount}/${count} photo${count!==1?'s':''} uploaded`);
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -4206,7 +4280,7 @@ async function saveUserForm() {
     errEl.style.display = 'none';
     saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
     const restrictedPayload = { full_name: fullName, updated_at: new Date().toISOString() };
-    if (password) restrictedPayload.password = password;
+    if (password) restrictedPayload.password = await hashPassword(password);
     console.log('[Users] Supervisor saving restricted payload:', restrictedPayload);
     if (supabaseClient) {
       const { error } = await supabaseClient.from(USERS_TABLE)
@@ -4260,7 +4334,7 @@ async function saveUserForm() {
     updated_at:      now,
   };
   if (!isEdit) payload.created_at = now;
-  if (password)     payload.password = password;
+  if (password) payload.password = await hashPassword(password);
 
   console.log('[Users] Saving user payload:', payload);
   console.log('[Users] supervisor_id:', payload.supervisor_id);
