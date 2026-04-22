@@ -1776,7 +1776,83 @@ const nonTechUsers = [
 // ══════════════════════════════════════════════════════════════
 const USERS_TABLE = 'users';
 
-// ── hashPassword: SHA-256 via Web Crypto (built into every modern browser) ──
+// ── DEV_MODE: set true only during local development ──────────────────────
+// When false (production):
+//   • loadUsersFromDB never auto-seeds or overwrites the real users table
+//   • if the query fails, the login shows "service unavailable"
+//   • in-memory fallback is disabled
+// When true:
+//   • falls back to built-in hardcoded users if DB is unreachable
+//   • auto-seeds the table if it is empty (use with caution)
+const DEV_MODE = false;
+
+// ── Load users from Supabase users table ──────────────────────────────────
+// Production-safe: never writes to the DB, never falls back to fake data.
+// Only populates allUsers cache for role filtering / assignment dropdowns.
+async function loadUsersFromDB() {
+  if (!supabaseClient) {
+    console.warn('[Users] supabaseClient not ready — skipping user load');
+    return;
+  }
+  try {
+    const { data, error } = await supabaseClient
+      .from(USERS_TABLE)
+      .select('employee_number, username, full_name, role, region, supervisor_id, is_active, created_at')
+      .eq('is_active', true)
+      .order('employee_number');
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      allUsers = data;
+      console.log('[Users] Loaded', allUsers.length, 'active users from DB');
+    } else if (DEV_MODE) {
+      // Only in dev: if table is empty seed built-in test data
+      console.warn('[Users] Table empty — DEV_MODE: seeding built-in users');
+      await seedBuiltInUsers();
+    } else {
+      // Production: empty table is unexpected but not a reason to overwrite
+      console.warn('[Users] users table returned 0 rows — check RLS or table data');
+      allUsers = [];
+    }
+  } catch(e) {
+    console.error('[Users] loadUsersFromDB failed:', e.message);
+    if (DEV_MODE) {
+      console.warn('[Users] DEV_MODE: using in-memory fallback');
+      allUsers = buildFallbackUsers();
+    } else {
+      // Production: surface the error, do not silently replace with fake users
+      allUsers = [];
+      console.error('[Users] Production mode — no fallback. Fix the DB connection.');
+    }
+  }
+}
+
+// ── seedBuiltInUsers — DEV_MODE only ─────────────────────────────────────
+// Never called in production (DEV_MODE = false).
+// Populates the users table with the hardcoded test accounts below.
+async function seedBuiltInUsers() {
+  if (!DEV_MODE) {
+    console.error('[Users] seedBuiltInUsers called outside DEV_MODE — blocked');
+    return;
+  }
+  const seed = buildFallbackUsers();
+  try {
+    const { error } = await supabaseClient
+      .from(USERS_TABLE)
+      .upsert(seed, { onConflict: 'employee_number' });
+    if (error) {
+      console.warn('[Users] Seed upsert error:', error.message);
+      allUsers = seed;
+    } else {
+      allUsers = seed;
+      console.log('[Users] DEV_MODE: Seeded', seed.length, 'built-in users');
+    }
+  } catch(e) {
+    allUsers = seed;
+    console.warn('[Users] Seed failed, using in-memory:', e.message);
+  }
+}
 // Returns a 64-char hex string. Used for both storing and verifying passwords.
 // Fallback: if SubtleCrypto is unavailable (very old browsers), returns the
 // plain string prefixed with "plain:" so existing accounts still work.
@@ -1805,81 +1881,39 @@ async function verifyPassword(entered, stored) {
   return hashed === stored;
 }
 
-// In-memory user registry (loaded from Supabase + seeded from technicianAccounts as fallback)
+// In-memory user registry (loaded from Supabase on boot)
 let allUsers = [];
 
-// ── Load users from Supabase ──
-async function loadUsersFromDB() {
-  if (!supabaseClient) return;
-  try {
-    const { data, error } = await supabaseClient.from(USERS_TABLE).select('*');
-    if (error) throw error;
-    if (data && data.length > 0) {
-      allUsers = data;
-      console.log('[Auth] Loaded', allUsers.length, 'users from DB');
-    } else {
-      // Table empty — seed built-in accounts into DB
-      await seedBuiltInUsers();
-    }
-  } catch(e) {
-    console.warn('[Auth] Could not load users from DB, using built-in fallback:', e.message);
-    // Fall back to in-memory users built from legacy arrays
-    allUsers = buildFallbackUsers();
-  }
-}
-
-// ── Seed built-in accounts into users table (uses employee_number as PK) ──
-async function seedBuiltInUsers() {
-  const seed = buildFallbackUsers();
-  try {
-    const { error } = await supabaseClient
-      .from(USERS_TABLE)
-      .upsert(seed, { onConflict: 'employee_number' });
-    if (error) console.warn('[Auth] Seed upsert error:', error.message);
-    else {
-      allUsers = seed;
-      console.log('[Auth] Seeded', seed.length, 'built-in users into DB');
-    }
-  } catch(e) {
-    allUsers = seed;
-    console.warn('[Auth] Seed failed, using in-memory:', e.message);
-  }
-}
-
-// ── Build fallback user list — employee_number is the integer primary key ──
+// ── buildFallbackUsers — DEV_MODE only ───────────────────────────────────
+// Returns in-memory user objects matching the real users table schema exactly:
+// employee_number, username, full_name, role, region, supervisor_id,
+// password, is_active, created_at
+// Columns NOT in the real schema are omitted: manager_id, color, updated_at
 function buildFallbackUsers() {
   const now = new Date().toISOString();
 
-  // Management users — integer employee_numbers defined in nonTechUsers
   const mgmt = nonTechUsers.map(u => ({
-    employee_number: u.employee_number,          // integer PK
+    employee_number: String(u.employee_number),
     full_name:       u.name,
     username:        u.username,
     password:        'demo',
     role:            u.role,
     region:          null,
     supervisor_id:   null,
-    manager_id:      null,
     is_active:       true,
-    color:           u.color,
     created_at:      now,
-    updated_at:      now,
   }));
 
-  // Field technicians — employeeNo string → integer
   const techs = technicianAccounts.map(t => ({
-    employee_number: parseInt(t.employeeNo, 10),  // integer PK
+    employee_number: String(parseInt(t.employeeNo, 10)),
     full_name:       t.name,
     username:        t.employeeNo,
     password:        t.password || t.employeeNo,
     role:            'technician',
     region:          t.region || 'east',
     supervisor_id:   null,
-    manager_id:      1003,                        // tech manager emp number
     is_active:       true,
-    color:           t.color,
     created_at:      now,
-    updated_at:      now,
   }));
 
   return [...mgmt, ...techs];
@@ -1916,24 +1950,26 @@ function normaliseRole(raw) {
   return aliases[snake] || 'technician';
 }
 
+// ── dbUserToCurrentUser ────────────────────────────────────────────────────
+// Maps a row from the real users table to the app's internal currentUser shape.
+// Real schema columns: employee_number, username, full_name, role, region,
+//                      supervisor_id, password, is_active, created_at
+// Removed: manager_id, color, updated_at, title (not in real table)
 function dbUserToCurrentUser(u) {
-  const role  = normaliseRole(u.role);   // normalise from whatever DB stores
+  const role  = normaliseRole(u.role);
   const cfg   = ROLE_CONFIG[role] || ROLE_CONFIG.technician;
   const empNo = String(u.employee_number);
   return {
-    id:          empNo,
+    id:          empNo,                            // app-internal key
     employeeNo:  empNo,
     name:        u.full_name,
     username:    u.username,
-    email:       `${u.username}@delta-tech.com`,
-    role,                                 // always a valid ROLE_CONFIG key
-    region:      u.region || null,
+    role,                                          // normalised ROLE_CONFIG key
+    region:      u.region   || null,
     supervisorId: u.supervisor_id ? String(u.supervisor_id) : null,
-    managerId:    u.manager_id   ? String(u.manager_id)    : null,
     avatar:      initials(u.full_name),
-    color:       u.color || cfg.color || '#005AA9',
-    roleLabel:   cfg.label || role,
-    title:       u.title || '',
+    color:       cfg.color  || '#005AA9',          // from ROLE_CONFIG, not DB
+    roleLabel:   cfg.label  || role,
     is_active:   u.is_active !== false,
   };
 }
@@ -1946,19 +1982,38 @@ const NON_TECH_PASSWORDS = {
   1003: 'demo',   // technical manager
 };
 
-// ── LEGACY ARRAYS kept for seed fallback & ticket assignee lookups ──
-// getTechByEmpNo: looks up by employee_number (accepts int or string)
+// ── TECH COLOUR helper ────────────────────────────────────────────────────
+// color is not in the real users table.
+// Derive a consistent colour from employee_number for UI avatars.
+const TECH_PALETTE = [
+  '#005AA9','#2E75B6','#0d9488','#7c3aed','#d97706',
+  '#dc2626','#059669','#e11d48','#0284c7','#7c2d12',
+];
+function derivedColor(empNo) {
+  const n = parseInt(empNo, 10) || 0;
+  return TECH_PALETTE[n % TECH_PALETTE.length];
+}
+
+// ── LEGACY ARRAYS kept for ticket assignee lookups ────────────────────────
 function getTechByEmpNo(empNo) {
-  const empInt = parseInt(empNo, 10);
-  // Search live allUsers first
-  const u = allUsers.find(u => u.employee_number === empInt && u.role === 'technician');
-  if (u) return { employeeNo: String(u.employee_number), name: u.full_name, color: u.color || '#6b7280', title: u.title || 'Technician', region: u.region || null };
-  // Fall back to static seed array
-  return technicianAccounts.find(t => t.employeeNo === String(empNo)) || null;
+  const key = String(empNo);
+  const u = allUsers.find(u => String(u.employee_number) === key && normaliseRole(u.role) === 'technician');
+  if (u) return {
+    employeeNo: String(u.employee_number),
+    name:       u.full_name,
+    color:      derivedColor(u.employee_number),
+    title:      'Technician',
+    region:     u.region || null,
+  };
+  return technicianAccounts.find(t => t.employeeNo === key) || null;
 }
 function getTechByName(name) {
-  const u = allUsers.find(u => u.full_name === name && u.role === 'technician');
-  if (u) return { employeeNo: u.employee_number, name: u.full_name, color: u.color || '#6b7280' };
+  const u = allUsers.find(u => u.full_name === name && normaliseRole(u.role) === 'technician');
+  if (u) return {
+    employeeNo: String(u.employee_number),
+    name:       u.full_name,
+    color:      derivedColor(u.employee_number),
+  };
   return technicianAccounts.find(t => t.name === name);
 }
 function techDisplayName(idOrName) {
@@ -1969,18 +2024,34 @@ function techColor(idOrName) {
   const t = getTechByEmpNo(idOrName) || getTechByName(idOrName);
   return t ? t.color : '#6b7280';
 }
-// Get all technician accounts (from live users, fall back to legacy array)
+
+// Get all technician accounts — aligned to real schema (no color/title in DB)
 function getAllTechnicians() {
   const live = allUsers.filter(u => normaliseRole(u.role) === 'technician' && u.is_active !== false);
   if (live.length > 0) return live.map(u => ({
     employeeNo:   String(u.employee_number),
     name:         u.full_name,
-    color:        u.color || '#6b7280',
-    title:        u.title || 'Technician',
+    color:        derivedColor(u.employee_number),  // derived, not from DB
+    title:        'Technician',                      // default, not from DB
     region:       u.region || null,
     supervisor_id: u.supervisor_id != null ? String(u.supervisor_id) : null,
   }));
   return technicianAccounts;
+}
+
+// getDemoUsers — used by renderAdmin list; aligned to real schema
+function getDemoUsers() {
+  return allUsers.map(u => ({
+    employeeNo:  String(u.employee_number),
+    name:        u.full_name,
+    username:    u.username,
+    role:        u.role,
+    avatar:      initials(u.full_name),
+    color:       derivedColor(u.employee_number),
+    roleLabel:   u.full_name + ' · ' + u.employee_number,
+    region:      u.region || null,
+    is_active:   u.is_active !== false,
+  }));
 }
 // Region-filtered technicians (for supervisor role — scoped to their team by supervisor_id)
 function getTechsForCurrentUser() {
@@ -2039,21 +2110,6 @@ function getSupervisorTickets(allTickets) {
 }
 
 // Build demoUsers shape from allUsers (used by renderAdmin and legacy spots)
-function getDemoUsers() {
-  return allUsers.map(u => ({
-    id:          u.id,
-    name:        u.full_name,
-    email:       `${u.username}@delta-tech.com`,
-    role:        u.role,
-    avatar:      initials(u.full_name),
-    color:       u.color || '#6b7280',
-    roleLabel:   u.full_name + (u.employee_number ? ' · ' + u.employee_number : ''),
-    employeeNo:  u.employee_number || u.id,
-    title:       u.title || '',
-    region:      u.region || null,
-    is_active:   u.is_active !== false,
-  }));
-}
 
 // ══════════════════════════════
 //   LOGIN SYSTEM  (v8 — real auth)
@@ -2148,7 +2204,9 @@ async function doLogin() {
   if (!found) {
     return fail('Invalid username or password.');
   }
-  if (String(found.password) !== String(password)) {
+  // Use verifyPassword — handles both plaintext (legacy) and SHA-256 hashed passwords
+  const passwordOk = await verifyPassword(password, found.password);
+  if (!passwordOk) {
     pwdEl.value = '';
     pwdEl.focus();
     return fail('Invalid username or password.');
@@ -4110,7 +4168,7 @@ async function renderAdmin() {
     const roleLabel = roleLabels[normRole] || u.role || '—';
     return `
     <div class="admin-user-row" style="${inactive ? 'opacity:.5;' : ''}">
-      <div style="width:36px;height:36px;border-radius:50%;background:${u.color||'#6b7280'};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;color:#fff;flex-shrink:0;">${initials(u.full_name)}</div>
+      <div style="width:36px;height:36px;border-radius:50%;background:${derivedColor(u.employee_number)};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;color:#fff;flex-shrink:0;">${initials(u.full_name)}</div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:700;color:var(--txt)">${u.full_name||'—'}${inactive ? ' <span style="font-size:10px;color:var(--muted)">(Disabled)</span>' : ''}</div>
         <div style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
@@ -4134,12 +4192,11 @@ async function toggleUserActive(empNum, makeActive) {
   const u = allUsers.find(x => x.employee_number === empNum);
   if (!u) return;
   u.is_active = makeActive;
-  u.updated_at = new Date().toISOString();
   console.log('[Users] toggle active:', u.username, empNum, '→', makeActive);
   if (supabaseClient) {
     const { error } = await supabaseClient
       .from(USERS_TABLE)
-      .update({ is_active: makeActive, updated_at: u.updated_at })
+      .update({ is_active: makeActive })   // only is_active — no updated_at in real schema
       .eq('employee_number', empNum);
     if (error) console.error('[Users] toggleUserActive error:', error.message);
   }
@@ -4147,25 +4204,17 @@ async function toggleUserActive(empNum, makeActive) {
   showToast(makeActive ? `✅ ${u.full_name} enabled` : `⏸ ${u.full_name} disabled`);
 }
 
-// ── Helper: populate supervisor/manager dropdown for the modal ──
+// ── Helper: populate supervisor dropdown for the modal ──
+// manager_id is not in the real users schema — only supervisor_id is used.
 function populateReportingDropdowns(currentEmpNum) {
-  // Supervisor dropdown: supervisors and technical managers
   const supervisorEl = document.getElementById('um-supervisor');
-  const managerEl    = document.getElementById('um-manager');
-  if (!supervisorEl || !managerEl) return;
+  if (!supervisorEl) return;
 
   const supervisors = allUsers.filter(u =>
-    ['regional_supervisor','technical_manager'].includes(u.role) && u.is_active !== false
-  );
-  const managers = allUsers.filter(u =>
-    u.role === 'technical_manager' && u.is_active !== false
+    ['regional_supervisor','technical_manager'].includes(normaliseRole(u.role)) && u.is_active !== false
   );
 
-  const blankOpt = '<option value="">— None —</option>';
-  supervisorEl.innerHTML = blankOpt + supervisors.map(u =>
-    `<option value="${u.employee_number}">${u.full_name} · ${u.employee_number}</option>`
-  ).join('');
-  managerEl.innerHTML = blankOpt + managers.map(u =>
+  supervisorEl.innerHTML = '<option value="">— None —</option>' + supervisors.map(u =>
     `<option value="${u.employee_number}">${u.full_name} · ${u.employee_number}</option>`
   ).join('');
 }
@@ -4177,9 +4226,8 @@ function openCreateUser() {
   });
   document.getElementById('um-role').value    = 'technician';
   document.getElementById('um-region').value  = '';
-  document.getElementById('um-color').value   = '#005AA9';
   document.getElementById('um-modal-title').textContent = 'Create User';
-  document.getElementById('um-emp-id').value  = '';   // hidden: stores employee_number for edit
+  document.getElementById('um-emp-id').value  = '';
   document.getElementById('um-error').style.display = 'none';
   populateReportingDropdowns(null);
   toggleRegionField();
@@ -4216,12 +4264,11 @@ function openEditUser(empNum) {
   document.getElementById('um-password').value  = '';
   document.getElementById('um-role').value      = u.role       || 'technician';
   document.getElementById('um-region').value    = u.region     || '';
-  document.getElementById('um-color').value     = u.color      || '#005AA9';
   document.getElementById('um-error').style.display = 'none';
 
-  // Supervisor: lock structural fields (can only edit name, password, active)
+  // Supervisor: lock structural fields (can only edit name, password)
   const lock = isSupervisor;
-  ['um-empno','um-username','um-role','um-region','um-color','um-supervisor','um-manager'].forEach(id => {
+  ['um-empno','um-username','um-role','um-region','um-supervisor'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = lock;
   });
@@ -4230,9 +4277,7 @@ function openEditUser(empNum) {
   if (isAdmin) {
     populateReportingDropdowns(empNum);
     const supEl = document.getElementById('um-supervisor');
-    const mgrEl = document.getElementById('um-manager');
     if (supEl) supEl.value = u.supervisor_id != null ? String(u.supervisor_id) : '';
-    if (mgrEl) mgrEl.value = u.manager_id    != null ? String(u.manager_id)    : '';
   }
   toggleRegionField();
   openModal('user-mgmt-modal');
@@ -4256,15 +4301,13 @@ async function saveUserForm() {
   const password    = document.getElementById('um-password').value.trim();
   const role        = document.getElementById('um-role').value;
   const region      = document.getElementById('um-region').value || null;
-  const color       = document.getElementById('um-color').value || '#005AA9';
   const supervisorRaw = document.getElementById('um-supervisor')?.value || '';
-  const managerRaw    = document.getElementById('um-manager')?.value    || '';
   const errEl       = document.getElementById('um-error');
   const saveBtn     = document.getElementById('um-save-btn');
 
   const isSupervisor = currentUser?.role === 'regional_supervisor';
 
-  // ── Supervisor restricted save: only full_name, password, is_active ──
+  // ── Supervisor restricted save: only full_name and password ──
   if (isSupervisor && empIdInput) {
     const targetEmpNum = parseInt(empIdInput, 10);
     const targetUser   = allUsers.find(u => u.employee_number === targetEmpNum);
@@ -4281,9 +4324,10 @@ async function saveUserForm() {
     if (!fullName) { errEl.textContent = 'Full name is required.'; errEl.style.display = 'block'; return; }
     errEl.style.display = 'none';
     saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
-    const restrictedPayload = { full_name: fullName, updated_at: new Date().toISOString() };
+    // Only columns allowed by real schema that supervisor can touch
+    const restrictedPayload = { full_name: fullName };
     if (password) restrictedPayload.password = await hashPassword(password);
-    console.log('[Users] Supervisor saving restricted payload:', restrictedPayload);
+    console.log('[Users] Supervisor saving:', restrictedPayload);
     if (supabaseClient) {
       const { error } = await supabaseClient.from(USERS_TABLE)
         .update(restrictedPayload).eq('employee_number', targetEmpNum);
@@ -4301,7 +4345,7 @@ async function saveUserForm() {
     return;
   }
 
-  // ── Admin / Tech Manager full save ──
+  // ── Admin / Tech Manager full save — only real schema columns ──
   if (!fullName)  { errEl.textContent='Full name is required.';  errEl.style.display='block'; return; }
   if (!username)  { errEl.textContent='Username is required.';   errEl.style.display='block'; return; }
   if (!empNoRaw)  { errEl.textContent='Employee number is required.'; errEl.style.display='block'; return; }
@@ -4320,27 +4364,23 @@ async function saveUserForm() {
   saveBtn.disabled    = true;
   saveBtn.textContent = 'Saving…';
 
-  const isEdit         = !!empIdInput;
-  const now            = new Date().toISOString();
+  const isEdit = !!empIdInput;
 
+  // Payload matches real users table columns exactly — no color, manager_id, updated_at
   const payload = {
     employee_number: empNoInt,
     full_name:       fullName,
     username,
     role,
-    region:          region || null,
-    supervisor_id:   supervisorRaw ? parseInt(supervisorRaw, 10) : null,
-    manager_id:      managerRaw    ? parseInt(managerRaw,    10) : null,
-    color,
-    is_active:       true,
-    updated_at:      now,
+    region:        region || null,
+    supervisor_id: supervisorRaw ? parseInt(supervisorRaw, 10) : null,
+    is_active:     true,
   };
-  if (!isEdit) payload.created_at = now;
+  if (!isEdit) payload.created_at = new Date().toISOString();
   if (password) payload.password = await hashPassword(password);
 
-  console.log('[Users] Saving user payload:', payload);
+  console.log('[Users] Saving payload:', payload);
   console.log('[Users] supervisor_id:', payload.supervisor_id);
-  console.log('[Users] manager_id:',   payload.manager_id);
 
   // ── Persist to Supabase — upsert on employee_number ──
   if (supabaseClient) {
@@ -4880,21 +4920,7 @@ window.addEventListener('DOMContentLoaded', () => {
         <select class="form-select" id="um-supervisor">
           <option value="">— None —</option>
         </select>
-        <div style="font-size:10px;color:var(--muted);margin-top:3px;">Option value = supervisor's employee number (integer)</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Reports to Manager <span style="color:var(--muted);font-weight:400">(manager_id)</span></label>
-        <select class="form-select" id="um-manager">
-          <option value="">— None —</option>
-        </select>
-        <div style="font-size:10px;color:var(--muted);margin-top:3px;">Option value = manager's employee number (integer)</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Avatar Colour</label>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <input type="color" id="um-color" value="#005AA9" style="width:44px;height:36px;border:none;border-radius:var(--rx);cursor:pointer;padding:2px;"/>
-          <div style="font-size:12px;color:var(--muted)">Pick avatar background colour</div>
-        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:3px;">Option value = supervisor's employee number</div>
       </div>
 
       <div id="um-error" style="display:none;background:var(--err-bg);color:var(--err);border-radius:var(--rx);padding:8px 12px;font-size:13px;font-weight:600;margin-bottom:8px;"></div>
