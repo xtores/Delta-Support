@@ -2091,117 +2091,119 @@ async function doLogin() {
   btn.textContent = 'Logging in…';
   errEl.style.display = 'none';
 
-  console.log('[LOGIN] ── START ──────────────────────────');
-  console.log('[LOGIN] Input:', input, '| password length:', password.length);
-  console.log('[LOGIN] supabaseClient ready:', !!supabaseClient);
+  console.log('[AUTH] Login attempt:', input);
 
+  // Always-reset helper
   const fail = (msg) => {
-    console.error('[LOGIN] FAIL:', msg);
+    console.warn('[AUTH] Failed:', msg);
     errEl.textContent   = msg;
     errEl.style.display = 'block';
     btn.disabled        = false;
     btn.textContent     = 'Log In →';
   };
 
-  // ── STEP 1: Supabase query ──────────────────────────────────────────────────
+  // ── Query Supabase users table ────────────────────────────────────────────
+  // Match username (case-insensitive) OR employee_number, is_active = true.
+  // No Supabase Auth — plain table lookup as specified.
   let found = null;
   try {
-    if (!supabaseClient) throw new Error('supabaseClient is not initialised');
+    if (!supabaseClient) throw new Error('Supabase client not ready');
 
-    const empNum  = parseInt(input, 10);
-    const isNum   = !isNaN(empNum) && String(empNum) === input;
-    const orFilter = isNum
-      ? `username.ilike.${input},employee_number.eq.${empNum}`
-      : `username.ilike.${input}`;
-
-    console.log('[LOGIN] Querying users table with or:', orFilter);
-
-    const { data, error } = await supabaseClient
+    // 1) Try username match
+    let { data, error } = await supabaseClient
       .from('users')
-      .select('*')
-      .or(orFilter)
-      .limit(1);
-
-    console.log('[LOGIN] Raw Supabase response — data:', data, '| error:', error);
+      .select('employee_number, username, full_name, role, region, supervisor_id, password, is_active')
+      .ilike('username', input)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
 
     if (error) throw error;
-    found = data && data.length > 0 ? data[0] : null;
+
+    // 2) If no username match and input is numeric, try employee_number
+    if (!data && /^\d+$/.test(input)) {
+      const res2 = await supabaseClient
+        .from('users')
+        .select('employee_number, username, full_name, role, region, supervisor_id, password, is_active')
+        .eq('employee_number', input)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      if (res2.error) throw res2.error;
+      data = res2.data;
+    }
+
+    found = data || null;
 
   } catch(e) {
-    console.warn('[LOGIN] Supabase query failed:', e.message || e);
-    // In-memory fallback
-    if (allUsers.length > 0) {
-      const lower = input.toLowerCase();
-      found = allUsers.find(u =>
-        u.username?.toLowerCase() === lower ||
-        String(u.employee_number) === input
-      ) || null;
-      console.log('[LOGIN] In-memory fallback result:', found ? found.username : null);
-    }
+    console.error('[AUTH] Supabase query error:', e.message);
+    return fail('Login service unavailable. Please try again.');
   }
 
-  console.log('[LOGIN] User found:', found
-    ? { username: found.username, employee_number: found.employee_number, role: found.role, is_active: found.is_active }
-    : 'NOT FOUND');
+  console.log('[AUTH] Query result:', found
+    ? { username: found.username, employee_number: found.employee_number, role: found.role }
+    : 'not found');
 
-  // ── STEP 2: Validation ─────────────────────────────────────────────────────
+  // ── Validate ──────────────────────────────────────────────────────────────
   if (!found) {
-    return fail('⛔ User not found. Check username or employee number.');
+    return fail('Invalid username or password.');
   }
-  if (found.is_active === false) {
-    return fail('⛔ This account is disabled. Contact your administrator.');
-  }
-
-  // verifyPassword handles hashed (SHA-256) and legacy plaintext automatically
-  const passwordOk = await verifyPassword(password, found.password);
-  console.log('[LOGIN] Password verified:', passwordOk);
-
-  if (!passwordOk) {
-    pwdEl.value = ''; pwdEl.focus();
-    return fail('⛔ Wrong password. Please try again.');
+  if (String(found.password) !== String(password)) {
+    pwdEl.value = '';
+    pwdEl.focus();
+    return fail('Invalid username or password.');
   }
 
-  console.log('[LOGIN] Password OK — proceeding to success path');
-
-  // ── STEP 3: Success ────────────────────────────────────────────────────────
+  // ── Success ───────────────────────────────────────────────────────────────
   try {
-    currentUser = dbUserToCurrentUser(found);
-    console.log('[LOGIN] mapped currentUser:', currentUser);
-
+    currentUser        = dbUserToCurrentUser(found);
     window.currentUser = currentUser;
 
-    // Persist session only if "Remember Me" is checked
+    console.log('[AUTH] Success:', {
+      employee_number: found.employee_number,
+      username:        found.username,
+      full_name:       found.full_name,
+      role:            found.role,
+      region:          found.region,
+    });
+
+    // Store the five required fields in localStorage
+    const sessionPayload = {
+      employee_number: found.employee_number,
+      username:        found.username,
+      full_name:       found.full_name,
+      role:            found.role,
+      region:          found.region || null,
+    };
+
     const rememberMe = document.getElementById('login-remember')?.checked;
     if (rememberMe) {
       localStorage.setItem(SESSION_KEY,   JSON.stringify({ employeeNumber: found.employee_number }));
-      localStorage.setItem('currentUser', JSON.stringify(found));
-      console.log('[LOGIN] Session saved (Remember Me)');
+      localStorage.setItem('currentUser', JSON.stringify(sessionPayload));
+      console.log('[AUTH] Session persisted (Remember Me)');
     } else {
       localStorage.removeItem(SESSION_KEY);
       localStorage.removeItem('currentUser');
     }
 
-    // Cache into allUsers
-    if (!allUsers.find(u => u.employee_number === found.employee_number)) allUsers.push(found);
+    // Seed into allUsers cache so the rest of the app can use it
+    if (!allUsers.find(u => u.employee_number === found.employee_number)) {
+      allUsers.push(found);
+    }
 
+    // Transition to app
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app-shell').classList.add('visible');
     document.body.classList.add('app-active');
     btn.textContent = 'Log In →';
-    console.log('[LOGIN] DOM updated — login hidden, app-shell visible');
-
-    console.log('[LOGIN] before bootApp');
     bootApp();
-    console.log('[LOGIN] after bootApp — login complete ✓');
 
   } catch(e) {
-    console.error('[LOGIN SUCCESS PATH ERROR]', e);
-    errEl.textContent  = e.message || 'Login success path failed';
-    errEl.style.display = 'block';
-    btn.disabled       = false;
-    btn.textContent    = 'Log In →';
+    console.error('[AUTH] Boot error:', e.message, e);
+    return fail('Login succeeded but app failed to start: ' + (e.message || 'unknown'));
   }
 }
+
 
 function doLogout() {
   localStorage.removeItem(SESSION_KEY);
