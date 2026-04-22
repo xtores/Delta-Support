@@ -279,6 +279,7 @@ body.app-active{padding-bottom:var(--bnav);}
 .b-maint{background:#e0f2fe;color:#0284c7;}
 .b-install{background:var(--ok-bg);color:var(--ok);}
 .b-parts{background:#fef3c7;color:#d97706;}
+.b-unscheduled{background:#fdf4ff;color:#9333ea;border:1px solid #e9d5ff;}  /* unscheduled visits */
 
 /* VISIT TIMER PILL — shown in active visit banner */
 .visit-timer-pill{
@@ -780,6 +781,15 @@ body.app-active{padding-bottom:var(--bnav);}
           <div class="filter-chip" onclick="setJobFilter('assigned',this)">📋 Assigned</div>
           <div class="filter-chip" onclick="setJobFilter('in-progress',this)">⚙️ Active</div>
           <div class="filter-chip" onclick="setJobFilter('completed',this)">✅ Done</div>
+        </div>
+        <!-- Unscheduled visit CTA -->
+        <div style="margin:0 14px 4px;padding:12px 14px;background:linear-gradient(135deg,#fdf4ff,#f3e8ff);border:1.5px solid #e9d5ff;border-radius:var(--r);display:flex;align-items:center;gap:12px;">
+          <div style="font-size:24px;flex-shrink:0">🆘</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:700;color:#7e22ce">Urgent / Unscheduled?</div>
+            <div style="font-size:11px;color:#9333ea;margin-top:1px">Start a self-initiated visit on site</div>
+          </div>
+          <button class="btn btn-sm" style="background:#9333ea;color:#fff;flex-shrink:0;border:none;" onclick="openUnscheduledForm()">+ Start</button>
         </div>
         <div id="my-jobs-list" style="padding:14px;display:flex;flex-direction:column;gap:10px;"></div>
       </div>
@@ -1633,42 +1643,52 @@ function sanitize(obj) {
 
 function ticketToDbRow(t) {
   return {
-    id:             t.id,
-    type:           t.type,
-    status:         t.status,
-    priority:       t.priority,
-    customer:       t.customer,
-    branch:         t.branch,
-    region:         t.region,
-    equipment:      t.equipment   || null,
-    description:    t.description || null,
-    scheduled_date: t.date        || null,
-    created_by:     t.createdBy   || null,
-    visit_data:     sanitize(t.visitData),
-    created_at:     t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
-    updated_at:     new Date().toISOString(),
+    id:                 t.id,
+    type:               t.type,
+    status:             t.status,
+    priority:           t.priority,
+    customer:           t.customer,
+    branch:             t.branch,
+    region:             t.region,
+    equipment:          t.equipment   || null,
+    description:        t.description || null,
+    scheduled_date:     t.date        || null,
+    created_by:         t.createdBy   || null,
+    visit_data:         sanitize(t.visitData),
+    // Unscheduled visit columns
+    is_unscheduled:     t.is_unscheduled     || false,
+    source:             t.source             || null,
+    approval_required:  t.approval_required  || false,
+    unscheduled_reason: t.unscheduled_reason || null,
+    created_at:         t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
+    updated_at:         new Date().toISOString(),
   };
 }
 
 function dbRowToTicket(row) {
   return {
-    id:          row.id,
-    type:        row.type,
-    status:      row.status,
-    priority:    row.priority,
-    customer:    row.customer,
-    branch:      row.branch,
-    region:      row.region,
-    equipment:   row.equipment   || '',
-    description: row.description || '',
+    id:                        row.id,
+    type:                      row.type,
+    status:                    row.status,
+    priority:                  row.priority,
+    customer:                  row.customer,
+    branch:                    row.branch,
+    region:                    row.region,
+    equipment:                 row.equipment   || '',
+    description:               row.description || '',
     // assigned_employee_numbers / assigned_names populated by attachAssignmentsToTickets
     assigned_employee_numbers: [],
     assigned_names:            [],
     assigned_users:            [],
-    date:        row.scheduled_date || '',
-    createdBy:   row.created_by   || '',
-    visitData:   sanitize(row.visit_data),
-    createdAt:   row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    date:                      row.scheduled_date || '',
+    createdBy:                 row.created_by   || '',
+    visitData:                 sanitize(row.visit_data),
+    // Unscheduled visit fields
+    is_unscheduled:            row.is_unscheduled     || false,
+    source:                    row.source             || null,
+    approval_required:         row.approval_required  || false,
+    unscheduled_reason:        row.unscheduled_reason || null,
+    createdAt:                 row.created_at ? new Date(row.created_at).getTime() : Date.now(),
   };
 }
 
@@ -2947,7 +2967,13 @@ function buildTicketCard(t, idx=0) {
     actions += `<button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteTicket('${t.id}')" title="Delete">🗑</button>`;
   return `
   <div class="tkt-card ${pri}" style="animation-delay:${idx*.04}s" onclick="openDetail('${t.id}')">
-    <div class="tkt-top"><span class="tkt-id">${t.id}</span>${statusBadge(t.status)}</div>
+    <div class="tkt-top">
+      <span class="tkt-id">${t.id}</span>
+      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+        ${t.is_unscheduled ? `<span class="badge b-unscheduled" title="Approval required">🆘 Unscheduled</span>` : ''}
+        ${statusBadge(t.status)}
+      </div>
+    </div>
     <div class="tkt-title">${t.equipment||t.description||'No title'}</div>
     <div class="tkt-location">📍 ${t.branch} · ${(t.region||'').charAt(0).toUpperCase()+(t.region||'').slice(1)} · ${t.customer}</div>
     <div class="tkt-footer">
@@ -3164,7 +3190,13 @@ function renderMyJobs() {
   if(sub) sub.textContent = `${list.length} job${list.length!==1?'s':''} assigned to you`;
   el.innerHTML = list.length ? list.map(t=>`
     <div class="job-card ${t.status==='in-progress'?'active-job':''}">
-      <div class="job-card-header"><div class="job-card-id">${t.id}</div>${statusBadge(t.status)}</div>
+      <div class="job-card-header">
+        <div class="job-card-id">${t.id}</div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+          ${t.is_unscheduled ? `<span class="badge b-unscheduled">🆘 Unscheduled</span>` : ''}
+          ${statusBadge(t.status)}
+        </div>
+      </div>
       <div class="job-card-title">${t.equipment||'No equipment'}</div>
       <div class="job-card-meta">📍 ${t.branch} · ${t.customer}<br>📅 ${t.date||'—'} · ${priorityPill(t.priority)}</div>
       ${getAssignedArr(t).length > 1 ? `<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--muted)">👥 Team: ${techLabel(t, 3)}</div>` : ''}
@@ -3175,6 +3207,135 @@ function renderMyJobs() {
     </div>`).join('') : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No jobs assigned to you</div></div>`;
 }
 function setJobFilter(f,el){jobFilter=f;document.querySelectorAll('#page-my-jobs .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderMyJobs();}
+
+// ── UNSCHEDULED VISIT ─────────────────────────────────────────────────────
+
+function openUnscheduledForm() {
+  // Clear previous values
+  ['usv-customer','usv-branch','usv-equipment','usv-description'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const reasonEl = document.getElementById('usv-reason');
+  if (reasonEl) reasonEl.value = '';
+  // Reset type buttons
+  document.querySelectorAll('#unscheduled-modal .type-btn').forEach(b => b.classList.remove('sel'));
+  document.querySelector('#unscheduled-modal [data-type=maintenance]')?.classList.add('sel');
+  const errEl = document.getElementById('usv-error');
+  if (errEl) errEl.style.display = 'none';
+  openModal('unscheduled-modal');
+}
+
+async function submitUnscheduledVisit() {
+  const customer    = document.getElementById('usv-customer')?.value.trim();
+  const branch      = document.getElementById('usv-branch')?.value.trim();
+  const equipment   = document.getElementById('usv-equipment')?.value.trim() || 'Equipment TBD';
+  const description = document.getElementById('usv-description')?.value.trim();
+  const reason      = document.getElementById('usv-reason')?.value;
+  const type        = document.querySelector('#unscheduled-modal .type-btn.sel')?.dataset.type || 'maintenance';
+  const errEl       = document.getElementById('usv-error');
+  const submitBtn   = document.getElementById('usv-submit-btn');
+
+  // Validate required fields
+  if (!customer)    { errEl.textContent = 'Customer / Site is required.';        errEl.style.display='block'; return; }
+  if (!branch)      { errEl.textContent = 'Branch / Location is required.';      errEl.style.display='block'; return; }
+  if (!description) { errEl.textContent = 'Issue description is required.';      errEl.style.display='block'; return; }
+  if (!reason)      { errEl.textContent = 'Please select a reason.';             errEl.style.display='block'; return; }
+  errEl.style.display = 'none';
+
+  submitBtn.disabled    = true;
+  submitBtn.textContent = 'Creating…';
+
+  const empNo  = String(currentUser.employeeNo || currentUser.employee_number || '');
+  const region = currentUser.region || null;
+
+  const ticket = {
+    id:                        nextIdLocal(),
+    type,
+    status:                    'in-progress',
+    priority:                  'normal',
+    customer,
+    branch,
+    region,
+    equipment,
+    description,
+    assigned_employee_numbers: [empNo],
+    assigned_names:            [currentUser.name],
+    assigned_users:            [],
+    date:                      new Date().toISOString().split('T')[0],
+    createdBy:                 empNo,
+    createdAt:                 Date.now(),
+    // Unscheduled flags — stored in visit_data and as top-level for filtering
+    is_unscheduled:            true,
+    source:                    'technician_self_started',
+    approval_required:         true,
+    unscheduled_reason:        reason,
+    visitData:                 EMPTY_VISIT(),
+  };
+
+  // Optimistically add to local list so technician can start immediately
+  tickets.unshift(ticket);
+  closeModal('unscheduled-modal');
+  renderAll();
+
+  // Persist to Supabase — get a real ticket ID first
+  try {
+    const realId = await db.nextId();
+    const idx = tickets.findIndex(x => x.id === ticket.id);
+    if (idx >= 0 && realId) { tickets[idx].id = realId; ticket.id = realId; }
+
+    await db.save(ticket);
+
+    // Write to ticket_assignments
+    await db.updateAssignment(ticket.id, [empNo]);
+
+    console.log('[Unscheduled] Ticket saved:', ticket.id);
+  } catch(e) {
+    console.error('[Unscheduled] Save failed:', e.message);
+    showToast('⚠️ Saved locally — will sync when online');
+  }
+
+  submitBtn.disabled    = false;
+  submitBtn.textContent = '🆘 Start Visit Now';
+
+  // Jump straight into the active visit for this ticket
+  showToast(`🆘 Unscheduled visit started · ${ticket.id}`);
+  startTechVisit(ticket.id);
+}
+
+// ── Supervisor / Manager: approve unscheduled visit ───────────────────────
+async function approveUnscheduledVisit(id) {
+  const t = tickets.find(x => x.id === id); if (!t) return;
+  t.approval_required = false;
+  renderAll();
+  showToast(`✅ ${id} approved`);
+  try {
+    await supabaseClient.from(TABLE)
+      .update({ approval_required: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
+  } catch(e) {
+    console.error('[Unscheduled] Approve failed:', e.message);
+  }
+  // Refresh detail modal
+  openDetail(id);
+}
+
+// ── Supervisor / Manager: reject unscheduled visit ────────────────────────
+async function rejectUnscheduledVisit(id) {
+  if (!confirm(`Reject unscheduled visit ${id}? Ticket status will be set to on-hold.`)) return;
+  const t = tickets.find(x => x.id === id); if (!t) return;
+  t.status = 'on-hold';
+  t.approval_required = false;
+  renderAll();
+  showToast(`⛔ ${id} rejected — set to on-hold`);
+  try {
+    await supabaseClient.from(TABLE)
+      .update({ status: 'on-hold', approval_required: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
+  } catch(e) {
+    console.error('[Unscheduled] Reject failed:', e.message);
+  }
+  openDetail(id);
+}
 
 function startTechVisit(id) {
   activeTechJobId = id;
@@ -4464,6 +4625,19 @@ function openDetail(id) {
     ? `<button class="btn btn-danger btn-sm" onclick="deleteTicket('${id}')">🗑 Delete</button>` : '';
 
   document.getElementById('detail-body').innerHTML = `
+    ${t.is_unscheduled ? `
+    <div style="background:#fdf4ff;border:1.5px solid #e9d5ff;border-radius:var(--rx);padding:12px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;">
+      <span style="font-size:20px;flex-shrink:0">🆘</span>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#7e22ce;margin-bottom:2px">Unscheduled Visit — Approval Required</div>
+        <div style="font-size:11px;color:#9333ea;">Source: Technician self-started · Reason: ${(t.unscheduled_reason||'').replace(/_/g,' ')}</div>
+        ${t.approval_required && isManagerOrAdmin() ? `
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:none;font-size:12px;" onclick="approveUnscheduledVisit('${t.id}')">✅ Approve</button>
+          <button class="btn btn-outline btn-sm" style="font-size:12px;color:var(--err);border-color:var(--err);" onclick="rejectUnscheduledVisit('${t.id}')">✕ Reject</button>
+        </div>` : ''}
+      </div>
+    </div>` : ''}
     <div class="detail-grid">
       <div class="detail-field"><div class="detail-field-lbl">Ticket ID</div><div class="detail-field-val" style="font-family:'JetBrains Mono';color:var(--p)">${t.id}</div></div>
       <div class="detail-field"><div class="detail-field-lbl">Type</div><div class="detail-field-val">${typeBadge(t.type)}</div></div>
@@ -5693,6 +5867,79 @@ function buildActionReportHTML(t) {
   updateOnlineStatus();
 })();
 </script>
+
+<!-- ══════════════════════════════════════════════════════
+     UNSCHEDULED VISIT MODAL  (Technician self-started)
+════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="unscheduled-modal" onclick="handleModalBg(event,'unscheduled-modal')">
+  <div class="modal-sheet" style="max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--bdr);">
+      <div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1px;">🆘 Unscheduled Visit</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">This visit will be flagged for supervisor approval</div>
+      </div>
+      <button onclick="closeModal('unscheduled-modal')" style="background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;padding:4px;">✕</button>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:14px;">
+
+      <!-- Customer / Site -->
+      <div class="form-group">
+        <label class="form-label">Customer / Site <span style="color:var(--err)">*</span></label>
+        <input class="form-input" id="usv-customer" type="text" placeholder="e.g. Al Noor Gym — Branch 3" autocomplete="off"/>
+      </div>
+
+      <!-- Branch / Location -->
+      <div class="form-group">
+        <label class="form-label">Branch / Location <span style="color:var(--err)">*</span></label>
+        <input class="form-input" id="usv-branch" type="text" placeholder="e.g. Operation Team — East"/>
+      </div>
+
+      <!-- Equipment -->
+      <div class="form-group">
+        <label class="form-label">Equipment</label>
+        <input class="form-input" id="usv-equipment" type="text" placeholder="e.g. Treadmill — Life Fitness T5"/>
+      </div>
+
+      <!-- Issue Description -->
+      <div class="form-group">
+        <label class="form-label">Issue Description <span style="color:var(--err)">*</span></label>
+        <textarea class="form-input" id="usv-description" rows="3" placeholder="Describe the issue or work to be done…" style="resize:none;"></textarea>
+      </div>
+
+      <!-- Reason for unscheduled -->
+      <div class="form-group">
+        <label class="form-label">Reason for Unscheduled Work <span style="color:var(--err)">*</span></label>
+        <select class="form-select" id="usv-reason">
+          <option value="">— Select reason —</option>
+          <option value="verbal_instruction">Verbal instruction from supervisor</option>
+          <option value="urgent_breakdown">Urgent equipment breakdown</option>
+          <option value="customer_request">Direct customer request on site</option>
+          <option value="preventive_opportunistic">Opportunistic preventive work</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <!-- Type -->
+      <div class="form-group">
+        <label class="form-label">Work Type</label>
+        <div class="type-grid" style="grid-template-columns:repeat(2,1fr);">
+          <div class="type-btn sel" data-type="maintenance" onclick="selectType(this)" style="padding:10px 8px;">🔧 Maintenance</div>
+          <div class="type-btn" data-type="installation" onclick="selectType(this)" style="padding:10px 8px;">🏗️ Installation</div>
+          <div class="type-btn" data-type="spare-parts" onclick="selectType(this)" style="padding:10px 8px;">📦 Spare Parts</div>
+          <div class="type-btn" data-type="amc" onclick="selectType(this)" style="padding:10px 8px;">📄 AMC</div>
+        </div>
+      </div>
+
+      <div id="usv-error" style="display:none;background:var(--err-bg);color:var(--err);border-radius:var(--rx);padding:8px 12px;font-size:13px;font-weight:600;"></div>
+
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline" style="flex:1" onclick="closeModal('unscheduled-modal')">Cancel</button>
+        <button class="btn btn-sm" id="usv-submit-btn" style="flex:2;min-height:48px;background:#9333ea;color:#fff;border:none;border-radius:var(--rx);font-weight:700;" onclick="submitUnscheduledVisit()">🆘 Start Visit Now</button>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
