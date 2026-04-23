@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <!--
   DELTA FITNESS SERVICE HUB v5 — Supabase Edition
   ═══════════════════════════════════════════════════════
@@ -2001,6 +2001,17 @@ function normaliseRole(raw) {
   return aliases[snake] || 'technician';
 }
 
+function normalizeUser(u) {
+  u = u || {};
+  return {
+    employee_number: String(u.employee_number || u.employeeNo || u.id || ''),
+    full_name:       u.full_name || u.name || '',
+    role:            normaliseRole(String(u.role || '').toLowerCase()),
+    region:          String(u.region || '').toLowerCase(),
+    supervisor_id:   String(u.supervisor_id || u.supervisorId || '')
+  };
+}
+
 // ── dbUserToCurrentUser ────────────────────────────────────────────────────
 // Maps a row from the real users table to the app's internal currentUser shape.
 // Real schema columns: employee_number, username, full_name, role, region,
@@ -2255,45 +2266,59 @@ async function doLogin() {
 
   // ── Success ───────────────────────────────────────────────────────────────────────────
   try {
-    currentUser        = dbUserToCurrentUser(found);
+    const normalized = normalizeUser(found);
+
+    currentUser = dbUserToCurrentUser({
+      ...found,
+      employee_number: normalized.employee_number,
+      full_name: normalized.full_name,
+      role: normalized.role,
+      region: normalized.region,
+      supervisor_id: normalized.supervisor_id
+    });
     window.currentUser = currentUser;
 
     console.log('[AUTH] Success:', {
-      employee_number: found.employee_number,
-      username:        found.username,
-      role:            found.role,
-      region:          found.region,
+      employee_number: currentUser.employee_number,
+      username: currentUser.username,
+      role: currentUser.role,
+      region: currentUser.region,
+      supervisor_id: currentUser.supervisor_id
     });
 
-    // Single canonical session object — clear all legacy keys first
     const sessionPayload = {
-      employee_number: found.employee_number,
-      username:        found.username,
-      full_name:       found.full_name,
-      role:            found.role,
-      region:          found.region || null,
+      employee_number: currentUser.employee_number,
+      employeeNo: currentUser.employeeNo,
+      username: currentUser.username,
+      full_name: currentUser.full_name,
+      name: currentUser.name,
+      role: currentUser.role,
+      region: currentUser.region || '',
+      supervisor_id: currentUser.supervisor_id || ''
     };
-    ['df_hub_session_v4', 'currentUser', 'sessionUser'].forEach(k => localStorage.removeItem(k));
 
-    const rememberMe = document.getElementById('login-remember')?.checked;
-    if (rememberMe) {
-      localStorage.setItem(DELTA_SESSION, JSON.stringify(sessionPayload));
-      console.log('[AUTH] Session persisted (delta_session)');
-    } else {
-      localStorage.removeItem(DELTA_SESSION);
-    }
+    localStorage.setItem('currentUser', JSON.stringify(sessionPayload));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionPayload));
 
-    // Seed into allUsers cache
-    if (!allUsers.find(u => String(u.employee_number) === String(found.employee_number))) {
-      allUsers.push(found);
+    console.log('[AUTH] Session persisted:', sessionPayload);
+
+    if (!allUsers.find(u => String(u.employee_number) === String(currentUser.employee_number))) {
+      allUsers.push({
+        employee_number: currentUser.employee_number,
+        username: currentUser.username,
+        full_name: currentUser.full_name,
+        role: currentUser.role,
+        region: currentUser.region,
+        supervisor_id: currentUser.supervisor_id,
+        is_active: true
+      });
     }
 
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app-shell').classList.add('visible');
     document.body.classList.add('app-active');
-    btn.textContent = 'Log In →';
+    btn.textContent = 'Log In ->';
     bootApp();
-
   } catch(e) {
     console.error('[AUTH] Boot error:', e.message, e);
     return fail('Login succeeded but app failed to start: ' + (e.message || 'unknown'));
@@ -5237,58 +5262,60 @@ function attachAssignmentsToTickets(ticketList, assignments, users) {
 // Strict role-based filter reading assigned_employee_numbers only.
 function getVisibleTickets(allTickets, user, users) {
   if (!user) return [];
-  const role  = user.role;
-  const empNo = String(user.employee_number || user.employeeNo || '');
 
-  // ── Admin / Technical Manager — all tickets ──────────────────────────────
+  const normalizedUser = normalizeUser(user);
+  const role = normalizedUser.role;
+  const empNo = normalizedUser.employee_number;
+
   if (['admin', 'technical_manager'].includes(role)) return allTickets;
 
-  // ── Technician / Senior Technician — only their own assigned tickets ──────
   if (['technician', 'senior_technician'].includes(role)) {
     return allTickets.filter(t =>
       (t.assigned_employee_numbers || []).map(String).includes(empNo)
     );
   }
 
-  // ── Regional Supervisor ──────────────────────────────────────────────────
-  // Visible tickets = assigned to any team member  OR  unassigned in supervisor's region
-  if (role === 'regional_supervisor') {
-    const region = String(user.region || '').toLowerCase();
-    console.log('[SUPERVISOR] employee_number:', empNo);
-    console.log('[SUPERVISOR] region:', region);
+  if (role?.startsWith('requester')) {
+    return allTickets.filter(t =>
+      String(t.createdBy) === empNo || String(t.created_by) === empNo
+    );
+  }
 
-    const teamEmpNos = users
-      .filter(u => u.supervisor_id != null && String(u.supervisor_id) === empNo)
+  if (role === 'regional_supervisor') {
+    const teamIds = (users || [])
+      .filter(u => String(u.supervisor_id || '') === empNo)
       .map(u => String(u.employee_number));
 
-    console.log('[SUPERVISOR] Team members:', teamEmpNos);
-
-    const assignedVisible = [];
-    const unassignedVisible = [];
+    console.log('[SUPERVISOR] employee_number:', empNo);
+    console.log('[SUPERVISOR] region:', normalizedUser.region);
+    console.log('[SUPERVISOR] teamIds:', teamIds);
 
     allTickets.forEach(t => {
-      const assigned = (t.assigned_employee_numbers || []).map(String);
-      const isUnassigned = assigned.length === 0;
-
-      if (!isUnassigned && assigned.some(id => teamEmpNos.includes(id))) {
-        assignedVisible.push(t);
-      } else if (isUnassigned && String(t.region || '').toLowerCase() === region) {
-        unassignedVisible.push(t);
-      }
+      console.log('[SUPERVISOR] ticket:', {
+        id: t.id,
+        assigned_employee_numbers: t.assigned_employee_numbers || [],
+        region: t.region
+      });
     });
 
-    console.log('[SUPERVISOR] Assigned visible ids:',   assignedVisible.map(t => t.id));
-    console.log('[SUPERVISOR] Unassigned visible ids:', unassignedVisible.map(t => t.id));
+    const visible = allTickets.filter(t => {
+      const assigned = (t.assigned_employee_numbers || []).map(String);
+      const assignedMatch = assigned.some(emp => teamIds.includes(String(emp)));
+      const isUnassigned = assigned.length === 0;
+      const unassignedMatch =
+        isUnassigned &&
+        String(t.region || '').toLowerCase() === String(normalizedUser.region || '').toLowerCase();
 
-    return [...assignedVisible, ...unassignedVisible];
+      return assignedMatch || unassignedMatch;
+    });
+
+    console.log('[SUPERVISOR] final visible ticket ids:', visible.map(t => t.id));
+    return visible;
   }
 
   return [];
 }
 
-
-// ── savePendingSync ───────────────────────────────────────────────────────
-// Saves a failed checklist/visit save to localStorage so it can be retried.
 function savePendingSync(ticketId, payload) {
   try {
     const existing = JSON.parse(localStorage.getItem(PENDING_SYNC) || '{}');
@@ -5325,65 +5352,82 @@ async function retryPendingSync() {
 }
 
 async function loadFromSupabase() {
-  showDbLoading('Loading tickets…');
-  console.log('[DB] Loading tickets + assignments from Supabase…');
+  showDbLoading('Loading tickets...');
+  console.log('[DB] Loading tickets + assignments from Supabase...');
 
-  // ── 1. Ensure allUsers populated ──────────────────────────────────────────
   if (allUsers.length === 0) {
-    try { await loadUsersFromDB(); } catch(e) {
+    try {
+      await loadUsersFromDB();
+    } catch(e) {
       console.warn('[DB] Could not load users:', e.message);
     }
   }
 
-  // ── 2. Fetch tickets and ticket_assignments in parallel ───────────────────
-  let rawTickets = [], rawAssignments = [];
+  let rawTickets = [];
+  let rawAssignments = [];
+
   try {
     const [ticketRes, assignRes] = await Promise.all([
       supabaseClient
         .from(TABLE)
-        .select('id, type, status, priority, customer, branch, region, equipment, description, scheduled_date, visit_data, created_by, created_at')
+        .select('*')
         .order('created_at', { ascending: false }),
       supabaseClient
         .from('ticket_assignments')
-        .select('ticket_id, employee_number, technician_name'),
+        .select('ticket_id, employee_number, technician_name')
     ]);
 
-    if (ticketRes.error)  throw ticketRes.error;
-    if (assignRes.error)  console.warn('[DB] ticket_assignments error:', assignRes.error.message);
+    if (ticketRes.error) throw ticketRes.error;
+    if (assignRes.error) {
+      console.warn('[DB] ticket_assignments error:', assignRes.error.message);
+    }
 
-    rawTickets     = ticketRes.data  || [];
-    rawAssignments = assignRes.data  || [];
-
+    rawTickets = ticketRes.data || [];
+    rawAssignments = assignRes.data || [];
   } catch(e) {
     hideDbLoading();
-    console.warn('[DB] Load failed — using local cache:', e.message);
-    showToast('⚠️ Offline — showing cached data');
+    console.warn('[DB] Load failed - using local cache:', e.message);
+    showToast('Offline - showing cached data');
     return;
   }
 
   hideDbLoading();
   console.log('[DB] Tickets:', rawTickets.length, '| Assignments:', rawAssignments.length);
 
-  // ── 3. Seed sample data on first run ──────────────────────────────────────
   if (rawTickets.length === 0 && SEED_TICKETS.length > 0) {
-    showDbLoading('First run — seeding sample data…');
-    for (const t of SEED_TICKETS) { await db.save(t); }
+    showDbLoading('First run - seeding sample data...');
+    for (const t of SEED_TICKETS) {
+      await db.save(t);
+    }
     hideDbLoading();
     rawTickets = JSON.parse(JSON.stringify(SEED_TICKETS));
     console.log('[DB] Seeded', rawTickets.length, 'sample ticket(s)');
   }
 
-  // ── 4. Map DB rows → ticket objects ───────────────────────────────────────
   const mapped = rawTickets.map(row => dbRowToTicket(row));
 
-  // ── 5. Attach assignments (source of truth) ───────────────────────────────
-  const withAssignments = attachAssignmentsToTickets(mapped, rawAssignments, allUsers);
+  const withAssignments = mapped.map(ticket => {
+    const assignedRows = rawAssignments.filter(a => String(a.ticket_id) === String(ticket.id));
 
-  // ── 6. Role-based visibility filter ──────────────────────────────────────
+    return {
+      ...ticket,
+      assigned_employee_numbers: assignedRows.map(a => String(a.employee_number)),
+      assigned_names: assignedRows.map(a => a.technician_name || ''),
+      assigned_users: assignedRows
+        .map(a => allUsers.find(u => String(u.employee_number) === String(a.employee_number)))
+        .filter(Boolean)
+    };
+  });
+
+  console.log('[DB] Assignment merge:', withAssignments.map(t => ({
+    id: t.id,
+    assigned_employee_numbers: t.assigned_employee_numbers,
+    assigned_names: t.assigned_names
+  })));
+
   const visible = getVisibleTickets(withAssignments, currentUser, allUsers);
   console.log('[DB] Visible after role filter:', visible.length, '(role:', currentUser?.role, ')');
 
-  // ── 7. Store and render ───────────────────────────────────────────────────
   tickets = JSON.parse(JSON.stringify(visible));
   saveLocalCache(tickets);
   renderAll();
@@ -5394,126 +5438,85 @@ async function loadFromSupabase() {
 // ══════════════════════════════
 window.addEventListener('DOMContentLoaded', async () => {
   const loginEl = document.getElementById('login-screen');
-  const appEl   = document.getElementById('app-shell');
+  const appEl = document.getElementById('app-shell');
 
-  // ── Attempt session restore from DELTA_SESSION ────────────────────────────
-  // Check before wiping — user may have selected "Remember Me"
-  const raw = localStorage.getItem(DELTA_SESSION);
-  if (raw) {
+  const restoreUser = (rawUser, sourceLabel) => {
+    const normalized = normalizeUser(rawUser);
+
+    if (!normalized.employee_number || !normalized.role) {
+      return false;
+    }
+
+    currentUser = dbUserToCurrentUser({
+      ...rawUser,
+      employee_number: normalized.employee_number,
+      full_name: normalized.full_name,
+      role: normalized.role,
+      region: normalized.region,
+      supervisor_id: normalized.supervisor_id,
+      is_active: true
+    });
+    window.currentUser = currentUser;
+
+    if (!allUsers.find(u => String(u.employee_number) === String(currentUser.employee_number))) {
+      allUsers.push({
+        employee_number: currentUser.employee_number,
+        username: currentUser.username || rawUser.username || '',
+        full_name: currentUser.full_name,
+        role: currentUser.role,
+        region: currentUser.region,
+        supervisor_id: currentUser.supervisor_id,
+        is_active: true
+      });
+    }
+
+    if (loginEl) loginEl.classList.add('hidden');
+    if (appEl) appEl.classList.add('visible');
+    document.body.classList.add('app-active');
+
+    localStorage.setItem('currentUser', JSON.stringify({
+      employee_number: currentUser.employee_number,
+      employeeNo: currentUser.employeeNo,
+      username: currentUser.username,
+      full_name: currentUser.full_name,
+      name: currentUser.name,
+      role: currentUser.role,
+      region: currentUser.region || '',
+      supervisor_id: currentUser.supervisor_id || ''
+    }));
+
+    console.log(sourceLabel);
+    bootApp();
+    return true;
+  };
+
+  const currentRaw = localStorage.getItem('currentUser');
+  if (currentRaw) {
     try {
-      const sess = JSON.parse(raw);
-      const empNo = sess.employee_number || sess.employeeNumber || null;
-
-      if (empNo && sess.role) {
-        console.log('[INIT] Restoring session for emp#', empNo, '| role:', sess.role);
-
-        // Build a DB-shaped user object from stored payload
-        const storedUser = {
-          employee_number: empNo,
-          username:        sess.username   || '',
-          full_name:       sess.full_name  || sess.name || '',
-          role:            sess.role,
-          region:          sess.region     || null,
-          supervisor_id:   sess.supervisor_id || null,
-          is_active:       true,
-        };
-
-        // Optionally validate against Supabase that user is still active
-        // (non-blocking — if it fails we still restore from cache)
-        try {
-          if (supabaseClient) {
-            const { data } = await supabaseClient
-              .from('users')
-              .select('employee_number, username, full_name, role, region, supervisor_id, is_active')
-              .eq('employee_number', empNo)
-              .eq('is_active', true)
-              .maybeSingle();
-
-            if (data) {
-              // Refresh from live DB
-              Object.assign(storedUser, data);
-              console.log('[INIT] Session validated against DB ✓');
-            } else if (data === null) {
-              // User deactivated or deleted — force logout
-              console.warn('[INIT] User no longer active — clearing session');
-              localStorage.removeItem(DELTA_SESSION);
-              showLoginScreen();
-              return;
-            }
-          }
-        } catch(dbErr) {
-          // DB unreachable — proceed with cached session (offline tolerance)
-          console.warn('[INIT] DB validation failed, using cached session:', dbErr.message);
-        }
-
-        currentUser        = dbUserToCurrentUser(storedUser);
-        window.currentUser = currentUser;
-
-        // Seed into allUsers
-        if (!allUsers.find(u => String(u.employee_number) === String(empNo))) {
-          allUsers.push(storedUser);
-        }
-
-        // Show app directly — skip login screen
-        if (loginEl) loginEl.classList.add('hidden');
-        if (appEl)   appEl.classList.add('visible');
-        document.body.classList.add('app-active');
-
-        console.log('[INIT] Session restored — booting app');
-        bootApp();
+      const stored = JSON.parse(currentRaw);
+      if (restoreUser(stored, '[SESSION] restoring from currentUser')) {
         return;
       }
     } catch(e) {
-      console.warn('[INIT] Session parse failed:', e.message);
+      console.warn('[SESSION] currentUser restore failed:', e.message);
+      localStorage.removeItem('currentUser');
     }
   }
 
-  // ── No valid session — also check legacy SESSION_KEY with employeeNumber ──
-  const legacyRaw = localStorage.getItem('df_hub_session_v4');
-  if (legacyRaw) {
+  const fallbackRaw = localStorage.getItem(SESSION_KEY);
+  if (fallbackRaw) {
     try {
-      const legacy = JSON.parse(legacyRaw);
-      if (legacy.employeeNumber && supabaseClient) {
-        console.log('[INIT] Legacy session found, looking up emp#', legacy.employeeNumber);
-        const { data } = await supabaseClient
-          .from('users')
-          .select('employee_number, username, full_name, role, region, supervisor_id, is_active')
-          .eq('employee_number', String(legacy.employeeNumber))
-          .eq('is_active', true)
-          .maybeSingle();
-
-        if (data) {
-          // Upgrade to new session format and boot
-          const sessionPayload = {
-            employee_number: data.employee_number,
-            username:        data.username,
-            full_name:       data.full_name,
-            role:            data.role,
-            region:          data.region || null,
-          };
-          localStorage.setItem(DELTA_SESSION, JSON.stringify(sessionPayload));
-          localStorage.removeItem('df_hub_session_v4');
-
-          currentUser        = dbUserToCurrentUser(data);
-          window.currentUser = currentUser;
-          if (!allUsers.find(u => String(u.employee_number) === String(data.employee_number))) {
-            allUsers.push(data);
-          }
-
-          if (loginEl) loginEl.classList.add('hidden');
-          if (appEl)   appEl.classList.add('visible');
-          document.body.classList.add('app-active');
-          console.log('[INIT] Legacy session upgraded and restored');
-          bootApp();
-          return;
-        }
+      const stored = JSON.parse(fallbackRaw);
+      if (restoreUser(stored, '[SESSION] restoring from SESSION_KEY fallback')) {
+        return;
       }
     } catch(e) {
-      console.warn('[INIT] Legacy session restore failed:', e.message);
+      console.warn('[SESSION] SESSION_KEY fallback restore failed:', e.message);
+      localStorage.removeItem(SESSION_KEY);
     }
   }
 
-  // ── No restorable session — clear everything and show login ───────────────
+  console.log('[SESSION] no valid session found');
   showLoginScreen();
 });
 
