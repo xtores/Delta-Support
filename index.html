@@ -1660,6 +1660,11 @@ function ticketToDbRow(t) {
     source:             t.source             || null,
     approval_required:  t.approval_required  || false,
     unscheduled_reason: t.unscheduled_reason || null,
+    // Review workflow columns
+    review_status:      t.review_status  || null,
+    reviewed_by:        t.reviewed_by    || null,
+    reviewed_at:        t.reviewed_at    || null,
+    review_notes:       t.review_notes   || null,
     created_at:         t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
     updated_at:         new Date().toISOString(),
   };
@@ -1688,6 +1693,11 @@ function dbRowToTicket(row) {
     source:                    row.source             || null,
     approval_required:         row.approval_required  || false,
     unscheduled_reason:        row.unscheduled_reason || null,
+    // Review workflow fields
+    review_status:             row.review_status  || null,
+    reviewed_by:               row.reviewed_by    || null,
+    reviewed_at:               row.reviewed_at    || null,
+    review_notes:              row.review_notes   || null,
     createdAt:                 row.created_at ? new Date(row.created_at).getTime() : Date.now(),
   };
 }
@@ -2546,6 +2556,38 @@ function statusBadge(s) {
   };
   return `<span class="badge ${m[s]||'b-new'}">${l[s]||s}</span>`;
 }
+
+// ── reviewBadge: shows review_status for unscheduled tickets ──────────────
+function reviewBadge(t) {
+  if (!t.is_unscheduled) return '';
+  const rs = t.review_status;
+  const styles = {
+    pending:   'background:#fef9c3;color:#a16207;border:1px solid #fde047',
+    approved:  'background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)',
+    rejected:  'background:var(--err-bg);color:#991b1b;border:1px solid #fca5a5',
+    converted: 'background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc',
+  };
+  const labels = {
+    pending:   '⏳ Pending Review',
+    approved:  '✅ Approved',
+    rejected:  '⛔ Rejected',
+    converted: '🔄 Converted',
+  };
+  const key = rs || 'pending';
+  return `<span class="badge" style="${styles[key]||styles.pending};font-size:10px;">${labels[key]||'⏳ Pending Review'}</span>`;
+}
+
+// ── isSupervisorOf: returns true if currentUser is the supervisor of the
+//    ticket's assigned technician(s) ─────────────────────────────────────
+function isSupervisorOf(t) {
+  if (currentUser?.role !== 'regional_supervisor') return false;
+  const myEmpNo  = String(currentUser.employee_number || currentUser.employeeNo || '');
+  const assigned = (t.assigned_employee_numbers || []).map(String);
+  return assigned.some(empNo => {
+    const u = allUsers.find(u => String(u.employee_number) === empNo);
+    return u && String(u.supervisor_id) === myEmpNo;
+  });
+}
 function typeBadge(t) {
   const m={'maintenance':'b-maint','installation':'b-install','spare-parts':'b-parts','amc':'b-amc'};
   const i={'maintenance':'🔧','installation':'🏗️','spare-parts':'📦','amc':'📄'};
@@ -2782,6 +2824,39 @@ function renderDashboard() {
     ).length;
     const pendingAssignment = scopedTickets.filter(t => t.status === 'new').length;
     const ss = getStats(scopedTickets);
+    // ── Unscheduled review counters (supervisor / admin only) ──
+    const unscheduled   = scopedTickets.filter(t => t.is_unscheduled);
+    const pendingReview = unscheduled.filter(t => !t.review_status || t.review_status === 'pending');
+    const approvedToday = unscheduled.filter(t =>
+      t.review_status === 'approved' && t.reviewed_at &&
+      t.reviewed_at.slice(0,10) === today
+    );
+    const rejectedToday = unscheduled.filter(t =>
+      t.review_status === 'rejected' && t.reviewed_at &&
+      t.reviewed_at.slice(0,10) === today
+    );
+    const unscheduledKpis = (role === 'regional_supervisor' || role === 'admin' || role === 'technical_manager') && unscheduled.length > 0 ? `
+      <div style="padding:0 14px 4px;margin-top:4px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9333ea;margin-bottom:6px;">🆘 Unscheduled Review</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+          <div class="kpi-card" style="background:#fdf4ff;border:1px solid #e9d5ff;cursor:pointer;" onclick="filterToUnscheduled()">
+            <div class="kpi-value" style="color:#9333ea">${unscheduled.length}</div>
+            <div class="kpi-label">Total Unscheduled</div>
+          </div>
+          <div class="kpi-card" style="background:#fef9c3;border:1px solid #fde047;cursor:pointer;" onclick="filterToUnscheduled('pending')">
+            <div class="kpi-value" style="color:#a16207">${pendingReview.length}</div>
+            <div class="kpi-label">Pending Review</div>
+          </div>
+          <div class="kpi-card" style="background:var(--ok-bg);border:1px solid var(--ok)">
+            <div class="kpi-value" style="color:var(--ok)">${approvedToday.length}</div>
+            <div class="kpi-label">Approved Today</div>
+          </div>
+          <div class="kpi-card" style="background:var(--err-bg);border:1px solid #fca5a5">
+            <div class="kpi-value" style="color:#991b1b">${rejectedToday.length}</div>
+            <div class="kpi-label">Rejected Today</div>
+          </div>
+        </div>
+      </div>` : '';
     kpiEl.innerHTML = `
       <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">🎫</div></div><div class="kpi-value">${ss.total}</div><div class="kpi-label">Total Tickets</div></div>
       <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⚡</div></div><div class="kpi-value">${ss.inProgress}</div><div class="kpi-label">Active Now</div></div>
@@ -2790,7 +2865,8 @@ function renderDashboard() {
       <div class="kpi-card c-teal"><div class="kpi-top"><div class="kpi-icon c-teal">⏱️</div></div><div class="kpi-value">${ss.sla}%</div><div class="kpi-label">SLA Compliance</div></div>
       <div class="kpi-card c-purple"><div class="kpi-top"><div class="kpi-icon c-purple">👷</div></div><div class="kpi-value">${ss.assigned}</div><div class="kpi-label">Assigned</div></div>
       <div class="kpi-card c-blue"><div class="kpi-top"><div class="kpi-icon c-blue">✅</div></div><div class="kpi-value">${ss.completed}</div><div class="kpi-label">Completed</div></div>
-      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⏸</div></div><div class="kpi-value">${ss.onHold}</div><div class="kpi-label">On Hold</div></div>`;
+      <div class="kpi-card c-orange"><div class="kpi-top"><div class="kpi-icon c-orange">⏸</div></div><div class="kpi-value">${ss.onHold}</div><div class="kpi-label">On Hold</div></div>
+      ${unscheduledKpis}`;
     // ── Branch / Tech quick-filter chips — rebuilt each render ──
     const dashChartsWrap = document.getElementById('dash-charts');
     if (dashChartsWrap) {
@@ -2974,6 +3050,7 @@ function buildTicketCard(t, idx=0) {
       <span class="tkt-id">${t.id}</span>
       <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
         ${t.is_unscheduled ? `<span class="badge b-unscheduled" title="Approval required">🆘 Unscheduled</span>` : ''}
+        ${reviewBadge(t)}
         ${statusBadge(t.status)}
       </div>
     </div>
@@ -3310,38 +3387,96 @@ async function submitUnscheduledVisit() {
 }
 
 // ── Supervisor / Manager: approve unscheduled visit ───────────────────────
-async function approveUnscheduledVisit(id) {
+// ── reviewUnscheduled ─────────────────────────────────────────────────────
+// Unified handler for approve / reject / convert actions.
+// action: 'approved' | 'rejected' | 'converted'
+// ── reviewUnscheduled ─────────────────────────────────────────────────────
+// Core handler for approve / reject / convert.
+// For reject: reads note from #review-note-input if present in the modal,
+// otherwise falls back to a plain prompt so it always works.
+async function reviewUnscheduled(id, action) {
   const t = tickets.find(x => x.id === id); if (!t) return;
-  t.approval_required = false;
-  renderAll();
-  showToast(`✅ ${id} approved`);
-  try {
-    await supabaseClient.from(TABLE)
-      .update({ approval_required: false, updated_at: new Date().toISOString() })
-      .eq('id', id);
-  } catch(e) {
-    console.error('[Unscheduled] Approve failed:', e.message);
+
+  // ── Collect rejection note from inline textarea in the modal ──────────────
+  let notes = '';
+  if (action === 'rejected') {
+    const inlineNote = document.getElementById('review-note-input');
+    notes = inlineNote ? inlineNote.value.trim() : '';
   }
-  // Refresh detail modal
+
+  const empNo    = String(currentUser.employee_number || currentUser.employeeNo || '');
+  const empName  = currentUser.full_name || currentUser.name || `Emp #${empNo}`;
+  const now      = new Date().toISOString();
+
+  // ── Update in-memory ticket ───────────────────────────────────────────────
+  t.review_status    = action;
+  t.reviewed_by      = empNo;
+  t.reviewed_at      = now;
+  t.approval_required = false;
+  if (notes) t.review_notes = notes;
+
+  if (action === 'rejected') {
+    t.status = 'on-hold';
+  } else if (action === 'converted') {
+    t.is_unscheduled = false;
+    // Always normalise status — 'new', 'on-hold', or missing → 'assigned'
+    if (!t.status || ['new','on-hold','pending_review'].includes(t.status)) {
+      t.status = 'assigned';
+    }
+  }
+
+  renderAll();
+  const labels = {
+    approved:  '✅ Approved',
+    rejected:  '⛔ Rejected',
+    converted: '🔄 Converted to scheduled ticket',
+  };
+  showToast(`${labels[action] || action} · ${id}`);
+
+  // ── Persist to Supabase ───────────────────────────────────────────────────
+  try {
+    const patch = {
+      review_status:    action,
+      reviewed_by:      empNo,
+      reviewed_at:      now,
+      review_notes:     notes || null,
+      approval_required: false,
+      updated_at:       now,
+    };
+    if (action === 'rejected')  { patch.status = 'on-hold'; }
+    if (action === 'converted') { patch.is_unscheduled = false; patch.status = t.status; }
+
+    await supabaseClient.from(TABLE).update(patch).eq('id', id);
+    console.log('[Review]', action, id, '| by:', empNo, empName, '| notes:', notes || '—');
+  } catch(e) {
+    console.error('[Review] Persist failed:', e.message);
+    showToast('⚠️ Review saved locally — sync failed');
+  }
+
   openDetail(id);
 }
 
-// ── Supervisor / Manager: reject unscheduled visit ────────────────────────
-async function rejectUnscheduledVisit(id) {
-  if (!confirm(`Reject unscheduled visit ${id}? Ticket status will be set to on-hold.`)) return;
-  const t = tickets.find(x => x.id === id); if (!t) return;
-  t.status = 'on-hold';
-  t.approval_required = false;
-  renderAll();
-  showToast(`⛔ ${id} rejected — set to on-hold`);
-  try {
-    await supabaseClient.from(TABLE)
-      .update({ status: 'on-hold', approval_required: false, updated_at: new Date().toISOString() })
-      .eq('id', id);
-  } catch(e) {
-    console.error('[Unscheduled] Reject failed:', e.message);
-  }
-  openDetail(id);
+// ── Named wrappers — called from modal buttons ────────────────────────────
+async function approveUnscheduledVisit(id)  { await reviewUnscheduled(id, 'approved');  }
+async function rejectUnscheduledVisit(id)   { await reviewUnscheduled(id, 'rejected');  }
+async function convertUnscheduledVisit(id)  { await reviewUnscheduled(id, 'converted'); }
+
+// ── filterToUnscheduled ───────────────────────────────────────────────────
+// Quick-filter the tickets page to show unscheduled tickets.
+// Called from dashboard KPI cards.
+function filterToUnscheduled(reviewStatus) {
+  goPage('tickets');
+  // Apply a transient filter
+  const allU = tickets.filter(t =>
+    t.is_unscheduled &&
+    (!reviewStatus || !t.review_status || t.review_status === reviewStatus)
+  );
+  const el = document.getElementById('ticket-list-container');
+  const cnt = document.getElementById('ticket-count-label');
+  if (cnt) cnt.textContent = `${allU.length} unscheduled ticket${allU.length!==1?'s':''}`;
+  if (el) el.innerHTML = allU.length
+    ? allU.map((t,i) => buildTicketCard(t,i)).join('')
+    : `<div class="empty-state"><div class="empty-icon">🆘</div><div class="empty-title">No unscheduled tickets</div></div>`;
 }
 
 function startTechVisit(id) {
@@ -4632,19 +4767,73 @@ function openDetail(id) {
     ? `<button class="btn btn-danger btn-sm" onclick="deleteTicket('${id}')">🗑 Delete</button>` : '';
 
   document.getElementById('detail-body').innerHTML = `
-    ${t.is_unscheduled ? `
-    <div style="background:#fdf4ff;border:1.5px solid #e9d5ff;border-radius:var(--rx);padding:12px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;">
-      <span style="font-size:20px;flex-shrink:0">🆘</span>
-      <div>
-        <div style="font-size:13px;font-weight:700;color:#7e22ce;margin-bottom:2px">Unscheduled Visit — Approval Required</div>
-        <div style="font-size:11px;color:#9333ea;">Source: Technician self-started · Reason: ${(t.unscheduled_reason||'').replace(/_/g,' ')}</div>
-        ${t.approval_required && isManagerOrAdmin() ? `
-        <div style="display:flex;gap:8px;margin-top:8px;">
-          <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:none;font-size:12px;" onclick="approveUnscheduledVisit('${t.id}')">✅ Approve</button>
-          <button class="btn btn-outline btn-sm" style="font-size:12px;color:var(--err);border-color:var(--err);" onclick="rejectUnscheduledVisit('${t.id}')">✕ Reject</button>
-        </div>` : ''}
-      </div>
-    </div>` : ''}
+    ${t.is_unscheduled ? (() => {
+      const rs        = t.review_status || 'pending';
+      const canReview = isSupervisorOf(t) || isManagerOrAdmin();
+
+      // ── Reviewer display name ──────────────────────────────────────────────
+      const reviewerName = (() => {
+        if (!t.reviewed_by) return null;
+        const u = allUsers.find(u => String(u.employee_number) === String(t.reviewed_by));
+        return u ? u.full_name : `Emp #${t.reviewed_by}`;
+      })();
+      const reviewedAtStr = t.reviewed_at
+        ? new Date(t.reviewed_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) +
+          ' · ' + new Date(t.reviewed_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})
+        : null;
+
+      // ── Action buttons (only when review is still actionable) ────────────
+      const actionButtons = canReview ? (() => {
+        if (rs === 'pending') {
+          return `
+          <div style="margin-top:10px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:5px;">Rejection note (optional)</div>
+            <textarea id="review-note-input" rows="2" placeholder="Enter reason if rejecting…"
+              style="width:100%;box-sizing:border-box;border:1.5px solid var(--bdr);border-radius:var(--rx);padding:8px;font-size:12px;background:var(--bg);color:var(--txt);resize:none;margin-bottom:8px;"></textarea>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:none;font-size:12px;" onclick="approveUnscheduledVisit('${t.id}')">✅ Approve</button>
+              <button class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;font-size:12px;" onclick="rejectUnscheduledVisit('${t.id}')">⛔ Reject</button>
+              <button class="btn btn-sm" style="background:#0369a1;color:#fff;border:none;font-size:12px;" onclick="convertUnscheduledVisit('${t.id}')">🔄 Convert</button>
+            </div>
+          </div>`;
+        }
+        if (rs === 'approved' || rs === 'rejected') {
+          return `
+          <div style="margin-top:8px;">
+            <button class="btn btn-sm" style="background:#0369a1;color:#fff;border:none;font-size:12px;" onclick="convertUnscheduledVisit('${t.id}')">🔄 Convert to Scheduled</button>
+          </div>`;
+        }
+        return '';
+      })() : '';
+
+      // ── Review history block (shown once reviewed) ─────────────────────
+      const reviewHistory = t.reviewed_by ? `
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e9d5ff;">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#9333ea;margin-bottom:6px;">Review History</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11px;">
+            <div><span style="color:var(--muted)">Status </span><strong>${rs.charAt(0).toUpperCase()+rs.slice(1)}</strong></div>
+            <div><span style="color:var(--muted)">By </span><strong>${reviewerName || `Emp #${t.reviewed_by}`}</strong></div>
+            ${reviewedAtStr ? `<div style="grid-column:1/-1"><span style="color:var(--muted)">At </span>${reviewedAtStr}</div>` : ''}
+            ${t.review_notes ? `<div style="grid-column:1/-1;margin-top:3px;font-style:italic;color:var(--muted)">Note: ${t.review_notes}</div>` : ''}
+          </div>
+        </div>` : '';
+
+      return `
+      <div style="background:#fdf4ff;border:1.5px solid #e9d5ff;border-radius:var(--rx);padding:12px 14px;margin-bottom:12px;">
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;flex-shrink:0">🆘</span>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
+              <span style="font-size:13px;font-weight:700;color:#7e22ce;">Unscheduled Visit</span>
+              ${reviewBadge(t)}
+            </div>
+            <div style="font-size:11px;color:#9333ea;">Source: Technician self-started · Reason: ${(t.unscheduled_reason||'—').replace(/_/g,' ')}</div>
+            ${reviewHistory}
+            ${actionButtons}
+          </div>
+        </div>
+      </div>`;
+    })() : ''}
     <div class="detail-grid">
       <div class="detail-field"><div class="detail-field-lbl">Ticket ID</div><div class="detail-field-val" style="font-family:'JetBrains Mono';color:var(--p)">${t.id}</div></div>
       <div class="detail-field"><div class="detail-field-lbl">Type</div><div class="detail-field-val">${typeBadge(t.type)}</div></div>
@@ -5048,33 +5237,39 @@ function attachAssignmentsToTickets(ticketList, assignments, users) {
 // Strict role-based filter reading assigned_employee_numbers only.
 function getVisibleTickets(allTickets, user, users) {
   if (!user) return [];
-  const role = user.role;
-  // Always use both canonical and legacy field — whichever dbUserToCurrentUser set
+  const role  = user.role;
   const empNo = String(user.employee_number || user.employeeNo || '');
 
+  // ── Admin / Technical Manager — all tickets ──────────────────────────────
   if (['admin', 'technical_manager'].includes(role)) return allTickets;
 
+  // ── Technician / Senior Technician — only their own assigned tickets ──────
   if (['technician', 'senior_technician'].includes(role)) {
     return allTickets.filter(t =>
       (t.assigned_employee_numbers || []).map(String).includes(empNo)
     );
   }
 
+  // ── Regional Supervisor — team-assignment only ────────────────────────────
+  // Rule: show tickets where assigned_employee_numbers contains ANY team member.
+  // No region filter. No createdBy filter.
   if (role === 'regional_supervisor') {
-    console.log('[SUPERVISOR] Current empNo:', empNo);
+    console.log('[SUPERVISOR] Current employee_number:', empNo);
 
-    // Team = users whose supervisor_id matches this supervisor's employee_number.
-    // supervisor_id is stored as text in the DB — compare as strings.
+    // Build team: all users whose supervisor_id === this supervisor's employee_number
     const teamEmpNos = users
       .filter(u => u.supervisor_id != null && String(u.supervisor_id) === empNo)
       .map(u => String(u.employee_number));
 
     console.log('[SUPERVISOR] Team members:', teamEmpNos);
 
+    // Log each ticket's assignment state for diagnosis
+    allTickets.forEach(t => {
+      const assigned = (t.assigned_employee_numbers || []).map(String);
+      console.log(`[SUPERVISOR] Ticket ${t.id} assigned_employee_numbers:`, assigned);
+    });
+
     const visible = allTickets.filter(t => {
-      // Tickets created directly by the supervisor
-      if (String(t.createdBy) === empNo) return true;
-      // Tickets assigned to any team member
       const assigned = (t.assigned_employee_numbers || []).map(String);
       return assigned.some(id => teamEmpNos.includes(id));
     });
