@@ -1297,7 +1297,23 @@ const db = {
   },
 
   async create(ticket) {
-    const row = JSON.parse(JSON.stringify(ticketToDbRow(ticket)));
+    const fullRow = JSON.parse(JSON.stringify(ticketToDbRow(ticket)));
+    const row = {
+      id:             fullRow.id,
+      type:           fullRow.type,
+      status:         fullRow.status,
+      priority:       fullRow.priority,
+      customer:       fullRow.customer,
+      branch:         fullRow.branch,
+      region:         fullRow.region,
+      equipment:      fullRow.equipment,
+      description:    fullRow.description,
+      scheduled_date: fullRow.scheduled_date,
+      created_by:     fullRow.created_by,
+      visit_data:     fullRow.visit_data,
+      created_at:     fullRow.created_at,
+      updated_at:     fullRow.updated_at
+    };
     console.log('[CREATE] payload', row);
 
     const { data, error } = await supabaseClient
