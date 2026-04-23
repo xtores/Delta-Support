@@ -3388,7 +3388,7 @@ async function submitUnscheduledVisit() {
   const region   = currentUser.region || null;
 
   const ticket = {
-    id:                        nextIdLocal(),
+    id:                        await db.nextId(),
     type,
     status:                    'in-progress',
     priority:                  'normal',
@@ -3412,21 +3412,14 @@ async function submitUnscheduledVisit() {
 
   console.log('[UNSCHEDULED] Creating ticket — empNo:', empNo, '| name:', techName);
 
-  // Add locally so technician can start immediately
-  tickets.unshift(ticket);
-  closeModal('unscheduled-modal');
-  renderAll();
-
   // Persist to Supabase
   try {
-    const realId = await db.nextId();
-    const idx = tickets.findIndex(x => x.id === ticket.id);
-    if (idx >= 0 && realId) { tickets[idx].id = realId; ticket.id = realId; }
-
-    await db.save(ticket);
+    const saved = await db.save(ticket);
+    if (!saved) throw new Error('Ticket insert/update failed. Check Supabase console for details.');
     console.log('[UNSCHEDULED] Created ticket id:', ticket.id);
 
-    await db.updateAssignment(ticket.id, [empNo]);
+    const assigned = await db.updateAssignment(ticket.id, [empNo]);
+    if (!assigned) throw new Error('Ticket was saved, but assignment insert failed.');
     console.log('[UNSCHEDULED] Assignment inserted for employee:', empNo);
 
     // Reload so supervisor views pick up the new ticket + assignment immediately
@@ -3434,9 +3427,15 @@ async function submitUnscheduledVisit() {
 
   } catch(e) {
     console.error('[UNSCHEDULED] Save failed:', e.message);
-    showToast('⚠️ Saved locally — will sync when online');
+    showToast('Unscheduled save failed: ' + (e.message || 'Unknown error'));
+    errEl.textContent = 'Save failed: ' + (e.message || 'Unknown error');
+    errEl.style.display = 'block';
+    submitBtn.disabled    = false;
+    submitBtn.textContent = '🆘 Start Visit Now';
+    return;
   }
 
+  closeModal('unscheduled-modal');
   submitBtn.disabled    = false;
   submitBtn.textContent = '🆘 Start Visit Now';
 
