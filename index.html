@@ -1272,9 +1272,11 @@ const db = {
   async save(ticket) {
     try {
       const row = JSON.parse(JSON.stringify(ticketToDbRow(ticket)));
-      const { error } = await supabaseClient
+      const { data, error } = await supabaseClient
         .from(TABLE)
-        .upsert(row, { onConflict: 'id' });
+        .upsert(row, { onConflict: 'id' })
+        .select('*')
+        .single();
 
       if (error) {
         console.error('[DB ERROR full]:', error);
@@ -1287,7 +1289,7 @@ const db = {
       }
 
       saveLocalCache(tickets);
-      return true;
+      return data || true;
     } catch(e) {
       console.error('[DB ERROR full]:', e);
       console.error('[DB ERROR message]:', e?.message);
@@ -1674,31 +1676,31 @@ function sanitize(obj) {
   try { return JSON.parse(JSON.stringify(obj)); } catch(e) { return null; }
 }
 
-function ticketToDbRow(t) {
+function ticketToDbRow(ticket) {
   return {
-    id:                 t.id,
-    type:               t.type,
-    status:             t.status,
-    priority:           t.priority,
-    customer:           t.customer,
-    branch:             t.branch,
-    region:             t.region,
-    equipment:          t.equipment   || null,
-    description:        t.description || null,
-    scheduled_date:     t.date        || null,
-    created_by:         t.createdBy   || null,
-    visit_data:         sanitize(t.visitData),
+    id:                 ticket.id,
+    type:               ticket.type,
+    status:             ticket.status,
+    priority:           ticket.priority,
+    customer:           ticket.customer,
+    branch:             ticket.branch,
+    region:             ticket.region,
+    equipment:          ticket.equipment   || null,
+    description:        ticket.description || null,
+    scheduled_date:     ticket.date        || null,
+    created_by:         ticket.createdBy   || null,
+    visit_data:         sanitize(ticket.visitData),
     // Unscheduled visit columns
-    is_unscheduled:     t.is_unscheduled     || false,
-    source:             t.source             || null,
-    approval_required:  t.approval_required  || false,
-    unscheduled_reason: t.unscheduled_reason || null,
+    is_unscheduled:     !!ticket.is_unscheduled,
+    source:             ticket.source || null,
+    approval_required:  !!ticket.approval_required,
+    unscheduled_reason: ticket.unscheduled_reason || null,
     // Review workflow columns
-    review_status:      t.review_status  || null,
-    reviewed_by:        t.reviewed_by    || null,
-    reviewed_at:        t.reviewed_at    || null,
-    review_notes:       t.review_notes   || null,
-    created_at:         t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
+    review_status:      ticket.review_status  || null,
+    reviewed_by:        ticket.reviewed_by    || null,
+    reviewed_at:        ticket.reviewed_at    || null,
+    review_notes:       ticket.review_notes   || null,
+    created_at:         ticket.createdAt ? new Date(ticket.createdAt).toISOString() : new Date().toISOString(),
     updated_at:         new Date().toISOString(),
   };
 }
@@ -3411,11 +3413,14 @@ async function submitUnscheduledVisit() {
   };
 
   console.log('[UNSCHEDULED] Creating ticket — empNo:', empNo, '| name:', techName);
+  console.log('[UNSCHEDULED] ticket object before save', ticket);
+  console.log('[UNSCHEDULED] db row payload', ticketToDbRow(ticket));
 
   // Persist to Supabase
   try {
     const saved = await db.save(ticket);
     if (!saved) throw new Error('Ticket insert/update failed. Check Supabase console for details.');
+    console.log('[UNSCHEDULED] saved row result', saved);
     console.log('[UNSCHEDULED] Created ticket id:', ticket.id);
 
     const assigned = await db.updateAssignment(ticket.id, [empNo]);
