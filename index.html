@@ -5250,32 +5250,37 @@ function getVisibleTickets(allTickets, user, users) {
     );
   }
 
-  // ── Regional Supervisor — team-assignment only ────────────────────────────
-  // Rule: show tickets where assigned_employee_numbers contains ANY team member.
-  // No region filter. No createdBy filter.
+  // ── Regional Supervisor ──────────────────────────────────────────────────
+  // Visible tickets = assigned to any team member  OR  unassigned in supervisor's region
   if (role === 'regional_supervisor') {
-    console.log('[SUPERVISOR] Current employee_number:', empNo);
+    const region = String(user.region || '').toLowerCase();
+    console.log('[SUPERVISOR] employee_number:', empNo);
+    console.log('[SUPERVISOR] region:', region);
 
-    // Build team: all users whose supervisor_id === this supervisor's employee_number
     const teamEmpNos = users
       .filter(u => u.supervisor_id != null && String(u.supervisor_id) === empNo)
       .map(u => String(u.employee_number));
 
     console.log('[SUPERVISOR] Team members:', teamEmpNos);
 
-    // Log each ticket's assignment state for diagnosis
+    const assignedVisible = [];
+    const unassignedVisible = [];
+
     allTickets.forEach(t => {
       const assigned = (t.assigned_employee_numbers || []).map(String);
-      console.log(`[SUPERVISOR] Ticket ${t.id} assigned_employee_numbers:`, assigned);
+      const isUnassigned = assigned.length === 0;
+
+      if (!isUnassigned && assigned.some(id => teamEmpNos.includes(id))) {
+        assignedVisible.push(t);
+      } else if (isUnassigned && String(t.region || '').toLowerCase() === region) {
+        unassignedVisible.push(t);
+      }
     });
 
-    const visible = allTickets.filter(t => {
-      const assigned = (t.assigned_employee_numbers || []).map(String);
-      return assigned.some(id => teamEmpNos.includes(id));
-    });
+    console.log('[SUPERVISOR] Assigned visible ids:',   assignedVisible.map(t => t.id));
+    console.log('[SUPERVISOR] Unassigned visible ids:', unassignedVisible.map(t => t.id));
 
-    console.log('[SUPERVISOR] Visible ticket ids:', visible.map(t => t.id));
-    return visible;
+    return [...assignedVisible, ...unassignedVisible];
   }
 
   return [];
@@ -5387,21 +5392,143 @@ async function loadFromSupabase() {
 // ══════════════════════════════
 //   INIT — always show login screen
 // ══════════════════════════════
-window.addEventListener('DOMContentLoaded', () => {
-  // Clear ALL session keys on fresh load — always start at login
+window.addEventListener('DOMContentLoaded', async () => {
+  const loginEl = document.getElementById('login-screen');
+  const appEl   = document.getElementById('app-shell');
+
+  // ── Attempt session restore from DELTA_SESSION ────────────────────────────
+  // Check before wiping — user may have selected "Remember Me"
+  const raw = localStorage.getItem(DELTA_SESSION);
+  if (raw) {
+    try {
+      const sess = JSON.parse(raw);
+      const empNo = sess.employee_number || sess.employeeNumber || null;
+
+      if (empNo && sess.role) {
+        console.log('[INIT] Restoring session for emp#', empNo, '| role:', sess.role);
+
+        // Build a DB-shaped user object from stored payload
+        const storedUser = {
+          employee_number: empNo,
+          username:        sess.username   || '',
+          full_name:       sess.full_name  || sess.name || '',
+          role:            sess.role,
+          region:          sess.region     || null,
+          supervisor_id:   sess.supervisor_id || null,
+          is_active:       true,
+        };
+
+        // Optionally validate against Supabase that user is still active
+        // (non-blocking — if it fails we still restore from cache)
+        try {
+          if (supabaseClient) {
+            const { data } = await supabaseClient
+              .from('users')
+              .select('employee_number, username, full_name, role, region, supervisor_id, is_active')
+              .eq('employee_number', empNo)
+              .eq('is_active', true)
+              .maybeSingle();
+
+            if (data) {
+              // Refresh from live DB
+              Object.assign(storedUser, data);
+              console.log('[INIT] Session validated against DB ✓');
+            } else if (data === null) {
+              // User deactivated or deleted — force logout
+              console.warn('[INIT] User no longer active — clearing session');
+              localStorage.removeItem(DELTA_SESSION);
+              showLoginScreen();
+              return;
+            }
+          }
+        } catch(dbErr) {
+          // DB unreachable — proceed with cached session (offline tolerance)
+          console.warn('[INIT] DB validation failed, using cached session:', dbErr.message);
+        }
+
+        currentUser        = dbUserToCurrentUser(storedUser);
+        window.currentUser = currentUser;
+
+        // Seed into allUsers
+        if (!allUsers.find(u => String(u.employee_number) === String(empNo))) {
+          allUsers.push(storedUser);
+        }
+
+        // Show app directly — skip login screen
+        if (loginEl) loginEl.classList.add('hidden');
+        if (appEl)   appEl.classList.add('visible');
+        document.body.classList.add('app-active');
+
+        console.log('[INIT] Session restored — booting app');
+        bootApp();
+        return;
+      }
+    } catch(e) {
+      console.warn('[INIT] Session parse failed:', e.message);
+    }
+  }
+
+  // ── No valid session — also check legacy SESSION_KEY with employeeNumber ──
+  const legacyRaw = localStorage.getItem('df_hub_session_v4');
+  if (legacyRaw) {
+    try {
+      const legacy = JSON.parse(legacyRaw);
+      if (legacy.employeeNumber && supabaseClient) {
+        console.log('[INIT] Legacy session found, looking up emp#', legacy.employeeNumber);
+        const { data } = await supabaseClient
+          .from('users')
+          .select('employee_number, username, full_name, role, region, supervisor_id, is_active')
+          .eq('employee_number', String(legacy.employeeNumber))
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (data) {
+          // Upgrade to new session format and boot
+          const sessionPayload = {
+            employee_number: data.employee_number,
+            username:        data.username,
+            full_name:       data.full_name,
+            role:            data.role,
+            region:          data.region || null,
+          };
+          localStorage.setItem(DELTA_SESSION, JSON.stringify(sessionPayload));
+          localStorage.removeItem('df_hub_session_v4');
+
+          currentUser        = dbUserToCurrentUser(data);
+          window.currentUser = currentUser;
+          if (!allUsers.find(u => String(u.employee_number) === String(data.employee_number))) {
+            allUsers.push(data);
+          }
+
+          if (loginEl) loginEl.classList.add('hidden');
+          if (appEl)   appEl.classList.add('visible');
+          document.body.classList.add('app-active');
+          console.log('[INIT] Legacy session upgraded and restored');
+          bootApp();
+          return;
+        }
+      }
+    } catch(e) {
+      console.warn('[INIT] Legacy session restore failed:', e.message);
+    }
+  }
+
+  // ── No restorable session — clear everything and show login ───────────────
+  showLoginScreen();
+});
+
+function showLoginScreen() {
   [DELTA_SESSION, 'df_hub_session_v4', 'currentUser', 'sessionUser'].forEach(k =>
     localStorage.removeItem(k)
   );
-
   const loginEl = document.getElementById('login-screen');
   const appEl   = document.getElementById('app-shell');
   if (loginEl) { loginEl.classList.remove('hidden'); loginEl.style.display = ''; }
   if (appEl)   { appEl.classList.remove('visible'); }
   document.body.classList.remove('app-active');
-
   setTimeout(() => document.getElementById('login-username')?.focus(), 100);
-  console.log('[INIT] Login screen ready — session cleared');
-});
+  console.log('[INIT] Login screen ready');
+}
 </script>
 
 <!-- ══════════════════════════════════════════════════
