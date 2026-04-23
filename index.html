@@ -1296,6 +1296,23 @@ const db = {
     }
   },
 
+  async create(ticket) {
+    const row = JSON.parse(JSON.stringify(ticketToDbRow(ticket)));
+    console.log('[CREATE] payload', row);
+
+    const { data, error } = await supabaseClient
+      .from(TABLE)
+      .insert(row);
+
+    if (error) {
+      console.error('[CREATE] Supabase insert error', error);
+      return { ok: false, error, data: null };
+    }
+
+    console.log('[CREATE] Supabase insert success', data);
+    return { ok: true, error: null, data };
+  },
+
   // ── Save visit data only ──
   async saveVisit(ticketId, visitData) {
     try {
@@ -5021,7 +5038,7 @@ function deleteTicket(id) {
 }
 
 // ── CREATE REQUEST (Requester role) ──
-function submitCreateRequest() {
+async function submitCreateRequest() {
   const customer = document.getElementById('cr-customer').value.trim();
   const branch   = document.getElementById('cr-branch').value;
   const errEl    = document.getElementById('cr-error');
@@ -5030,8 +5047,10 @@ function submitCreateRequest() {
   errEl.style.display = 'none';
   const type = document.querySelector('#page-create-request .type-btn.sel')?.dataset.type||'maintenance';
   const autoEmp = autoAssign();
+  console.log('[CREATE] submitting ticket');
+  const realId = await db.nextId();
   const t = {
-    id: nextIdLocal(), type, status:'new', priority: document.getElementById('cr-priority').value,
+    id: realId, type, status:'new', priority: document.getElementById('cr-priority').value,
     customer, branch, region: document.getElementById('cr-region').value,
     equipment:                 document.getElementById('cr-equipment').value.trim() || 'Equipment TBD',
     description:               document.getElementById('cr-description').value.trim(),
@@ -5041,20 +5060,30 @@ function submitCreateRequest() {
     date:        document.getElementById('cr-date').value || new Date().toISOString().split('T')[0],
     createdBy:   currentUser.id, createdAt: Date.now(),
   };
-  tickets.unshift(t);
+
+  const result = await db.create(t);
+  if (!result.ok) {
+    const msg = result.error?.message || 'Unknown Supabase insert error';
+    showToast('Create failed: ' + msg);
+    errEl.textContent = 'Create failed: ' + msg;
+    errEl.style.display = 'block';
+    return;
+  }
+
+  if (autoEmp) {
+    const assignOk = await db.updateAssignment(t.id, [String(autoEmp)]);
+    if (!assignOk) {
+      showToast('Ticket created, but assignment save failed');
+    }
+  }
+
   // Clear form
   ['cr-customer','cr-equipment','cr-description','cr-date'].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; });
   document.querySelectorAll('#page-create-request .type-btn').forEach(b=>b.classList.remove('sel'));
   document.querySelector('#page-create-request [data-type=maintenance]')?.classList.add('sel');
-  renderAll();
+  await loadFromSupabase();
   showToast(`✅ ${t.id} submitted!`);
   goPage('my-requests');
-  // Save to Supabase then correct the ID
-  db.nextId().then(realId => {
-    const idx = tickets.findIndex(x=>x.id===t.id);
-    if(idx>=0 && realId){ tickets[idx].id=realId; t.id=realId; }
-    db.save(t);
-  });
 }
 
 // ── NEW TICKET MODAL (Manager/Admin) ──
@@ -5100,7 +5129,7 @@ function getSelectedTechs(containerId) {
   return [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb=>cb.value);
 }
 
-function submitNewTicket() {
+async function submitNewTicket() {
   const customer = document.getElementById('f-customer').value.trim();
   const branch   = document.getElementById('f-branch').value;
   const errEl    = document.getElementById('form-error');
@@ -5135,8 +5164,10 @@ function submitNewTicket() {
     : document.getElementById('f-region').value;
   const ticketCreatedBy = String(currentUser.employeeNo || currentUser.employee_number || currentUser.id);
 
+  console.log('[CREATE] submitting ticket');
+  const realId = await db.nextId();
   const t = {
-    id: nextIdLocal(), type, status,
+    id: realId, type, status,
     priority:                    document.getElementById('f-priority').value,
     customer, branch,
     region:                      ticketRegion,
@@ -5152,26 +5183,31 @@ function submitNewTicket() {
     createdAt:                   Date.now(),
   };
 
-  tickets.unshift(t);
+  const result = await db.create(t);
+  if (!result.ok) {
+    const msg = result.error?.message || 'Unknown Supabase insert error';
+    console.error('[CREATE] Supabase insert error', result.error);
+    showToast('Create failed: ' + msg);
+    errEl.textContent = 'Create failed: ' + msg;
+    errEl.style.display = 'block';
+    return;
+  }
+
+  if (selectedTechs.length > 0) {
+    const assignOk = await db.updateAssignment(t.id, selectedTechs);
+    if (!assignOk) {
+      showToast('Ticket created, but assignment save failed');
+    }
+  }
+
   closeModal('new-ticket-modal');
   resetForm();
-  renderAll();
   const msg = selectedTechs.length
     ? `✅ ${t.id} created · Assigned to ${t.assigned_names.join(', ')}`
     : `✅ ${t.id} created · Awaiting assignment`;
+  await loadFromSupabase();
   showToast(msg);
   setTimeout(()=>goPage('tickets'),300);
-  db.nextId().then(realId => {
-    const idx = tickets.findIndex(x=>x.id===t.id);
-    if(idx>=0 && realId){ tickets[idx].id=realId; t.id=realId; }
-    db.save(t).then(async () => {
-      // Write assignments to ticket_assignments table
-      if (selectedTechs.length > 0) {
-        await db.updateAssignment(t.id, selectedTechs);
-      }
-      loadFromSupabase();
-    });
-  });
 }
 
 function resetForm() {
